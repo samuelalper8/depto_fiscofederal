@@ -1,5 +1,5 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  Interface Web SaaS (v4.0)
+ConPrev — Gerador EFD-Reinf  ·  Interface Web SaaS (v4.1 - Fix Session State)
 =============================================================
 Processamento 100% em memória, Injeção Dinâmica de Tabelas via XML (Sem quebrar layouts),
 Replace seguro com preservação de formatação e Lógica "Sem Movimento".
@@ -166,9 +166,9 @@ html,body,.stApp,.stMarkdown,p,span,div,label,li{font-family:'Sora',sans-serif!i
 """
 st.markdown(_CSS, unsafe_allow_html=True)
 
-# ── Gerenciamento de Estado ───────────────────────────────────────────────────
-ss = st.session_state
-ss.setdefault("authenticated", False)
+# ── Gerenciamento de Estado Seguro ────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
 # ── Lógica de Negócios & Arquitetura Word ─────────────────────────────────────
 def get_datas_padrao() -> Tuple[str, str, str, datetime]:
@@ -207,16 +207,12 @@ def read_excel_data(file_bytes: bytes) -> Optional[List[Dict[str, Any]]]:
         st.error(f"Erro ao ler Excel: {e}")
         return None
 
-# --- NOVAS FUNÇÕES DE ALTA PERFORMANCE (XML & SUBSTITUIÇÃO) ---
 def replace_everywhere(doc: Document, old: str, new: str) -> None:
-    """Substitui texto cirurgicamente em parágrafos, runs, tabelas e cabeçalhos preservando a formatação."""
     def repl(par):
         if old in par.text:
-            # Tenta substituir de forma isolada preservando o 'run' (negrito, itálico)
             for run in par.runs:
                 if old in run.text:
                     run.text = run.text.replace(old, new)
-            # Fallback seguro: se a palavra tiver sido quebrada em múltiplos runs pelo motor do Word
             if old in par.text:
                 par.text = par.text.replace(old, new)
 
@@ -231,7 +227,6 @@ def replace_everywhere(doc: Document, old: str, new: str) -> None:
                 for p in h.paragraphs: repl(p)
 
 def mover_tabela_para_placeholder(doc: Document, table: Any, placeholder_text: str) -> bool:
-    """Encontra a tag mágica e injeta o XML da tabela perfeitamente na sua posição."""
     target_p = None
     for p in doc.paragraphs:
         if placeholder_text in p.text:
@@ -240,21 +235,18 @@ def mover_tabela_para_placeholder(doc: Document, table: Any, placeholder_text: s
             
     if target_p:
         target_p._p.addnext(table._tbl)
-        target_p.text = "" # Apaga o texto {{TABELA_NOTAS}} após inserir a tabela
+        target_p.text = "" 
         return True
     return False
 
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
-    """Constrói a tabela de 6 colunas de forma programática (Com e Sem Movimento)."""
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
     
-    # --- CENÁRIO: SEM MOVIMENTO ---
     if not dados_nfs:
         table = doc.add_table(rows=2, cols=6)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Formata cabeçalho
         for i, h in enumerate(headers):
             p = table.rows[0].cells[i].paragraphs[0]
             r = p.add_run(h)
@@ -262,13 +254,11 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             r.font.size = Pt(10)
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
-        # Linha de Mensagem (Células Mescladas)
         row_msg = table.rows[1].cells
         row_msg[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"
-        row_msg[0].merge(row_msg[5]) # Mescla as 6 colunas num único bloco
+        row_msg[0].merge(row_msg[5]) 
         row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Linha de Totalizadores (Zerada)
         t_row = table.add_row().cells
         t_row[3].text = "Total Geral"
         t_row[4].text = "R$ 0,00"
@@ -281,12 +271,10 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             
         return table
         
-    # --- CENÁRIO: COM MOVIMENTO ---
     table = doc.add_table(rows=1, cols=6)
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
-    # Formata cabeçalho
     for i, h in enumerate(headers):
         p = table.rows[0].cells[i].paragraphs[0]
         r = p.add_run(h)
@@ -294,7 +282,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         r.font.size = Pt(10)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-    # Popula dados reais
     for nf in dados_nfs:
         row = table.add_row().cells
         row[0].text = str(nf.get('Órgão', ''))
@@ -308,7 +295,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in p.runs: run.font.size = Pt(10)
 
-    # Calculadores Totais
     total_contrib = sum(safe_float(nf.get('Total Contrib. Prev.')) for nf in dados_nfs)
     total_compensacao = sum(safe_float(nf.get('Compensação')) for nf in dados_nfs)
     
@@ -318,7 +304,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     t_row[5].text = _brl_fmt(total_compensacao)
     for i in [3, 4, 5]:
         p = t_row[i].paragraphs[0]
-        # Aplica negrito final
         if not p.runs: p.add_run(t_row[i].text)
         for run in p.runs: 
             run.bold = True
@@ -330,11 +315,9 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
 def processar_word(template_bytes: bytes, contexto: Dict[str, str], dados_nfs: List[Dict[str, Any]]) -> io.BytesIO:
     doc = Document(io.BytesIO(template_bytes))
     
-    # 1. Substituição Profunda e Segura em todos os elementos do Word
     for key, value in contexto.items():
         replace_everywhere(doc, key, value)
 
-    # 2. Construção e Injeção do XML da Tabela
     tabela_xml = criar_tabela_reinf(doc, dados_nfs)
     sucesso = mover_tabela_para_placeholder(doc, tabela_xml, "{{TABELA_NOTAS}}")
     
@@ -373,7 +356,7 @@ def render_login() -> None:
                 return
 
             if pwd == senha_oficial:
-                ss.authenticated = True
+                st.session_state["authenticated"] = True
                 st.rerun()
             else:
                 st.error("⚠️ Senha incorreta. Acesso negado.")
@@ -391,7 +374,8 @@ def render_header():
         </div>""", unsafe_allow_html=True)
     with right:
         if st.button("↩ Sair", key="logout_btn"):
-            ss.authenticated = False; st.rerun()
+            st.session_state["authenticated"] = False
+            st.rerun()
 
 # ── Views (Tabs) ──────────────────────────────────────────────────────────────
 def render_app():
@@ -564,7 +548,7 @@ Qualquer dúvida ou necessidade de verificação, continuamos à disposição. S
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    if not ss.authenticated:
+    if not st.session_state["authenticated"]:
         render_login()
     else:
         render_app()
