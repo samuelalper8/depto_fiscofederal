@@ -1,13 +1,11 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  Interface Web (Streamlit)
+ConPrev — Gerador EFD-Reinf  ·  Interface Web SaaS (v4.0)
 =============================================================
-Migração de Tkinter para SaaS. Processamento 100% em memória (io.BytesIO),
-segurança de acesso, UI Premium (Glassmorphism + Dark Mode) e
-Gerador Automático de E-mail de Cobrança.
+Processamento 100% em memória, Injeção Dinâmica de Tabelas via XML (Sem quebrar layouts),
+Replace seguro com preservação de formatação e Lógica "Sem Movimento".
 """
 import streamlit as st
 import io
-import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -16,6 +14,7 @@ import pandas as pd
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 
 # ── Configuração da Página ────────────────────────────────────────────────────
 st.set_page_config(
@@ -141,13 +140,14 @@ _CSS = """
 html,body,.stApp,.stMarkdown,p,span,div,label,li{font-family:'Sora',sans-serif!important;color:var(--text)}
 
 /* Inputs */
-.stTextInput>div>div>input, .stDateInput>div>div>input{background:rgba(255,255,255,.05)!important; border:1px solid var(--border2)!important;border-radius:var(--radius)!important;color:var(--text)!important;font-size:14px!important;}
-.stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus{border-color:var(--sky)!important; box-shadow:0 0 0 3px rgba(45,143,212,.18)!important}
-.stTextInput>label, .stSelectbox>label, .stDateInput>label{color:var(--muted)!important;font-size:11px!important;font-weight:600!important;text-transform:uppercase;letter-spacing:1px}
+.stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input{background:rgba(255,255,255,.05)!important; border:1px solid var(--border2)!important;border-radius:var(--radius)!important;color:var(--text)!important;font-size:14px!important;}
+.stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus, .stNumberInput>div>div>input:focus{border-color:var(--sky)!important; box-shadow:0 0 0 3px rgba(45,143,212,.18)!important}
+.stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label{color:var(--muted)!important;font-size:11px!important;font-weight:600!important;text-transform:uppercase;letter-spacing:1px}
 
-/* Selectbox */
+/* Selectbox & Checkbox */
 [data-baseweb="select"]>div{background:rgba(255,255,255,.05)!important;border:1px solid var(--border2)!important;border-radius:var(--radius)!important;color:var(--text)!important}
 [data-baseweb="menu"]{background:var(--navy4)!important;border:1px solid var(--border2)!important;}
+.stCheckbox>label{color:var(--text2)!important;font-size:13px!important;cursor:pointer}
 
 /* Buttons */
 .stButton>button[kind="primary"],button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,var(--amber),var(--amber2))!important;color:#0B1E33!important;font-weight:700!important;border:none!important;border-radius:var(--radius)!important;padding:12px 28px!important;box-shadow:0 4px 16px rgba(242,159,5,.3)!important;}
@@ -170,7 +170,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 ss = st.session_state
 ss.setdefault("authenticated", False)
 
-# ── Lógica de Negócios (In-Memory) ────────────────────────────────────────────
+# ── Lógica de Negócios & Arquitetura Word ─────────────────────────────────────
 def get_datas_padrao() -> Tuple[str, str, str, datetime]:
     hoje = datetime.now()
     primeiro_dia = hoje.replace(day=1)
@@ -198,7 +198,7 @@ def read_excel_data(file_bytes: bytes) -> Optional[List[Dict[str, Any]]]:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
         sheet_name = next((name for name in wb.sheetnames if name.strip().lower().startswith("valores")), None)
         if not sheet_name:
-            st.error('Aba "Valores" não encontrada na planilha.')
+            st.error('Aba "Valores" não encontrada na planilha Excel.')
             return None
         sheet = wb[sheet_name]
         headers = [str(cell.value).strip() if cell.value is not None else "" for cell in sheet[1]]
@@ -207,28 +207,96 @@ def read_excel_data(file_bytes: bytes) -> Optional[List[Dict[str, Any]]]:
         st.error(f"Erro ao ler Excel: {e}")
         return None
 
-def processar_word(template_bytes: bytes, contexto: Dict[str, str], dados_nfs: List[Dict[str, Any]]) -> io.BytesIO:
-    doc = Document(io.BytesIO(template_bytes))
-    
-    for p in doc.paragraphs:
-        for key, value in contexto.items():
-            if key in p.text:
-                for r in p.runs:
-                    r.text = r.text.replace(key, value)
-    
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for key, value in contexto.items():
-                    if key in cell.text:
-                        cell.text = cell.text.replace(key, value)
+# --- NOVAS FUNÇÕES DE ALTA PERFORMANCE (XML & SUBSTITUIÇÃO) ---
+def replace_everywhere(doc: Document, old: str, new: str) -> None:
+    """Substitui texto cirurgicamente em parágrafos, runs, tabelas e cabeçalhos preservando a formatação."""
+    def repl(par):
+        if old in par.text:
+            # Tenta substituir de forma isolada preservando o 'run' (negrito, itálico)
+            for run in par.runs:
+                if old in run.text:
+                    run.text = run.text.replace(old, new)
+            # Fallback seguro: se a palavra tiver sido quebrada em múltiplos runs pelo motor do Word
+            if old in par.text:
+                par.text = par.text.replace(old, new)
 
-    tabela = next((t for t in doc.tables if len(t.columns) == 6), None)
-    if not tabela or len(tabela.rows) < 2:
-        raise ValueError("Tabela de 6 colunas não encontrada no modelo Word.")
+    for p in doc.paragraphs: repl(p)
+    for t in doc.tables:
+        for row in t.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs: repl(p)
+    for s in doc.sections:
+        for h in [s.header, s.first_page_header, s.footer, s.first_page_footer]:
+            if h:
+                for p in h.paragraphs: repl(p)
+
+def mover_tabela_para_placeholder(doc: Document, table: Any, placeholder_text: str) -> bool:
+    """Encontra a tag mágica e injeta o XML da tabela perfeitamente na sua posição."""
+    target_p = None
+    for p in doc.paragraphs:
+        if placeholder_text in p.text:
+            target_p = p
+            break
+            
+    if target_p:
+        target_p._p.addnext(table._tbl)
+        target_p.text = "" # Apaga o texto {{TABELA_NOTAS}} após inserir a tabela
+        return True
+    return False
+
+def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
+    """Constrói a tabela de 6 colunas de forma programática (Com e Sem Movimento)."""
+    headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
+    
+    # --- CENÁRIO: SEM MOVIMENTO ---
+    if not dados_nfs:
+        table = doc.add_table(rows=2, cols=6)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
+        # Formata cabeçalho
+        for i, h in enumerate(headers):
+            p = table.rows[0].cells[i].paragraphs[0]
+            r = p.add_run(h)
+            r.font.bold = True
+            r.font.size = Pt(10)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+        # Linha de Mensagem (Células Mescladas)
+        row_msg = table.rows[1].cells
+        row_msg[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"
+        row_msg[0].merge(row_msg[5]) # Mescla as 6 colunas num único bloco
+        row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Linha de Totalizadores (Zerada)
+        t_row = table.add_row().cells
+        t_row[3].text = "Total Geral"
+        t_row[4].text = "R$ 0,00"
+        t_row[5].text = "R$ 0,00"
+        for i in [3, 4, 5]:
+            p = t_row[i].paragraphs[0]
+            if not p.runs: p.add_run(t_row[i].text)
+            for run in p.runs: run.bold = True
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+        return table
+        
+    # --- CENÁRIO: COM MOVIMENTO ---
+    table = doc.add_table(rows=1, cols=6)
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    # Formata cabeçalho
+    for i, h in enumerate(headers):
+        p = table.rows[0].cells[i].paragraphs[0]
+        r = p.add_run(h)
+        r.font.bold = True
+        r.font.size = Pt(10)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+    # Popula dados reais
     for nf in dados_nfs:
-        row = tabela.add_row().cells
+        row = table.add_row().cells
         row[0].text = str(nf.get('Órgão', ''))
         row[1].text = str(nf.get('CNPJ Tomador', ''))
         row[2].text = str(nf.get('Nº NF', ''))
@@ -236,21 +304,42 @@ def processar_word(template_bytes: bytes, contexto: Dict[str, str], dados_nfs: L
         row[4].text = _brl_fmt(nf.get('Total Contrib. Prev.'))
         row[5].text = _brl_fmt(nf.get('Compensação'))
         for cell in row:
-            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-    tabela._tbl.remove(tabela.rows[1]._tr)
-    
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in p.runs: run.font.size = Pt(10)
+
+    # Calculadores Totais
     total_contrib = sum(safe_float(nf.get('Total Contrib. Prev.')) for nf in dados_nfs)
     total_compensacao = sum(safe_float(nf.get('Compensação')) for nf in dados_nfs)
     
-    t_row = tabela.add_row().cells
+    t_row = table.add_row().cells
     t_row[3].text = "Total Geral"
     t_row[4].text = _brl_fmt(total_contrib)
     t_row[5].text = _brl_fmt(total_compensacao)
     for i in [3, 4, 5]:
-        for p in t_row[i].paragraphs:
-            for run in p.runs: run.bold = True
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p = t_row[i].paragraphs[0]
+        # Aplica negrito final
+        if not p.runs: p.add_run(t_row[i].text)
+        for run in p.runs: 
+            run.bold = True
+            run.font.size = Pt(10)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+    return table
+
+def processar_word(template_bytes: bytes, contexto: Dict[str, str], dados_nfs: List[Dict[str, Any]]) -> io.BytesIO:
+    doc = Document(io.BytesIO(template_bytes))
+    
+    # 1. Substituição Profunda e Segura em todos os elementos do Word
+    for key, value in contexto.items():
+        replace_everywhere(doc, key, value)
+
+    # 2. Construção e Injeção do XML da Tabela
+    tabela_xml = criar_tabela_reinf(doc, dados_nfs)
+    sucesso = mover_tabela_para_placeholder(doc, tabela_xml, "{{TABELA_NOTAS}}")
+    
+    if not sucesso:
+        raise ValueError("A tag {{TABELA_NOTAS}} não foi encontrada no ficheiro Word. Adicione esta tag no local onde deseja que os lançamentos apareçam.")
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -316,7 +405,7 @@ def render_app():
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
         _section("Edição Rápida da Planilha Excel", "✏️", accent="#2d8fd4")
-        st.markdown("<p style='font-size:13px; color:var(--muted); margin-bottom: 20px;'>Em vez de preencher formulários campo a campo, cole os dados diretamente na tabela abaixo.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:13px; color:var(--muted); margin-bottom: 20px;'>Copie e cole dados do seu sistema diretamente na tabela abaixo.</p>", unsafe_allow_html=True)
         
         cols = ["Órgão", "CNPJ Tomador", "Nº NF", "CNPJ Prestador", "Total Contrib. Prev.", "Compensação"]
         df_base = pd.DataFrame(columns=cols)
@@ -345,9 +434,15 @@ def render_app():
         with col_left:
             _section("Configurações do Ato", "⚙️")
             cliente_sel = st.selectbox("Selecione o Cliente", list(CLIENTES.keys()))
-            num_ato = st.text_input("Nº do Ato", value="/2026")
-            resp_sel = st.selectbox("Responsável", list(RESPONSAVEIS.keys()))
             
+            c_ato1, c_ato2 = st.columns([2, 1])
+            with c_ato1:
+                num_ato_int = st.number_input("Nº Inicial do Ato", min_value=1, value=1, step=1)
+            with c_ato2:
+                ano_ato = st.text_input("Ano", value=str(datetime.now().year))
+            num_ato = f"{num_ato_int:03d}/{ano_ato}"
+            
+            resp_sel = st.selectbox("Responsável", list(RESPONSAVEIS.keys()))
             competencia = st.text_input("Competência", value=comp_folha)
             vencimento = st.text_input("Vencimento", value=venc_str_padrao)
             
@@ -355,43 +450,68 @@ def render_app():
             is_reinf = "Reinf" in tipo_darf
             
         with col_right:
-            _section("Upload dos Arquivos", "📤", accent="#2a9c6b")
-            arq_excel = st.file_uploader("1. Planilha de Lançamentos (.xlsx)", type=["xlsx"])
-            arq_word = st.file_uploader("2. Modelo Folha de Rosto (.docx)", type=["docx"])
+            _section("Lançamentos & Documento Oficial", "📤", accent="#2a9c6b")
             
+            with st.expander("ℹ️ Instruções de Formatação (Modelo Word)", expanded=False):
+                st.markdown("""
+                **O seu ficheiro `Modelo_Folha_Rosto.docx` deve ter as seguintes tags mágicas:**
+                - `{{numero_ato}}`, `{{data_emissao}}`, `{{municipio_uf}}`
+                - `{{competencia}}`, `{{vencimento}}`, `{{responsavel}}`, `{{ramal}}`
+                - `{{check_reinf}}`, `{{check_avulso}}`
+                - E o mais importante: Escreva **`{{TABELA_NOTAS}}`** isolado numa linha onde deseja que a grelha de lançamentos/valores seja inserida automaticamente.
+                """)
+            
+            houve_retencao = st.checkbox("✅ Houve retenções a declarar neste mês?", value=True)
+            
+            arq_excel = None
+            if houve_retencao:
+                arq_excel = st.file_uploader("Upload da Planilha de Lançamentos (.xlsx)", type=["xlsx"])
+            else:
+                st.info("ℹ️ Você marcou que não há retenções. O sistema omitirá a grelha de lançamentos e injetará a indicação oficial 'Sem Movimento'.")
+
             st.markdown("<br><br>", unsafe_allow_html=True)
-            can_run = bool(arq_excel and arq_word)
+            can_run = bool(arq_excel) if houve_retencao else True
             
             if st.button("Gerar Folha de Rosto Oficial", type="primary", use_container_width=True, disabled=not can_run):
-                with st.spinner("Compilando documento..."):
-                    dados_nfs = read_excel_data(arq_excel.getvalue())
-                    if dados_nfs is not None:
-                        uf = CLIENTES[cliente_sel].get("UF", "")
-                        municipio_uf = f"{cliente_sel} / {uf}" if uf else cliente_sel
-                        
-                        contexto = {
-                            '{{numero_ato}}': num_ato,
-                            '{{data_emissao}}': datetime.now().strftime('%d/%m/%Y'),
-                            '{{municipio_uf}}': municipio_uf,
-                            '{{competencia}}': competencia,
-                            '{{vencimento}}': vencimento,
-                            '{{responsavel}}': resp_sel,
-                            '{{ramal}}': RESPONSAVEIS[resp_sel],
-                            '{{check_reinf}}': "☒" if is_reinf else "☐",
-                            '{{check_avulso}}': "☐" if is_reinf else "☒"
-                        }
-                        try:
-                            buf = processar_word(arq_word.getvalue(), contexto, dados_nfs)
-                            st.success("✅ Documento gerado com sucesso!")
-                            st.download_button(
-                                label="📥 Baixar Folha de Rosto Final (.docx)",
-                                data=buf,
-                                file_name=f"Folha de Rosto - {cliente_sel} - {competencia.replace('/','-')}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
-                            )
-                        except Exception as e:
-                            st.error(f"❌ Erro ao processar Word: {e}")
+                with st.spinner("Compilando documento a partir do modelo local..."):
+                    
+                    dados_nfs = []
+                    if houve_retencao and arq_excel:
+                        dados_nfs = read_excel_data(arq_excel.getvalue()) or []
+
+                    uf = CLIENTES[cliente_sel].get("UF", "")
+                    municipio_uf = f"{cliente_sel} / {uf}" if uf else cliente_sel
+                    
+                    contexto = {
+                        '{{numero_ato}}': num_ato,
+                        '{{data_emissao}}': datetime.now().strftime('%d/%m/%Y'),
+                        '{{municipio_uf}}': municipio_uf,
+                        '{{competencia}}': competencia,
+                        '{{vencimento}}': vencimento,
+                        '{{responsavel}}': resp_sel,
+                        '{{ramal}}': RESPONSAVEIS[resp_sel],
+                        '{{check_reinf}}': "☒" if is_reinf else "☐",
+                        '{{check_avulso}}': "☐" if is_reinf else "☒"
+                    }
+                    try:
+                        with open("Modelo_Folha_Rosto.docx", "rb") as f:
+                            template_bytes = f.read()
+                            
+                        buf = processar_word(template_bytes, contexto, dados_nfs)
+                        st.success("✅ Documento gerado com sucesso!")
+                        st.download_button(
+                            label="📥 Baixar Folha de Rosto Final (.docx)",
+                            data=buf,
+                            file_name=f"Folha de Rosto - {cliente_sel} - {competencia.replace('/','-')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+                    except FileNotFoundError:
+                        st.error("❌ O ficheiro 'Modelo_Folha_Rosto.docx' não foi encontrado na mesma pasta do código. Por favor, coloque-o lá.")
+                    except ValueError as ve:
+                        st.error(f"❌ {ve}")
+                    except Exception as e:
+                        st.error(f"❌ Ocorreu um erro no processamento do Word: {e}")
 
     # TAB 3: GERADOR DE E-MAIL
     with tab3:
@@ -402,23 +522,21 @@ def render_app():
         with e_col1:
             em_cliente = st.selectbox("Cliente (Para o Assunto)", list(CLIENTES.keys()), key="em_cliente")
             em_comp = st.text_input("Competência (Ex: 03/2026)", value=comp_email, key="em_comp")
+            em_retencao = st.checkbox("Houve retenção nesta competência?", value=True, key="em_retencao")
         with e_col2:
             em_venc_dt = st.date_input("Data de Vencimento", value=venc_dt_padrao, format="DD/MM/YYYY", key="em_venc_dt")
-            em_valor = st.text_input("Valor Bruto do Documento (Ex: 68.103,60)", value="0,00", key="em_valor")
+            em_valor = st.text_input("Valor Bruto do Documento (Ex: 68.103,60)", value="0,00", key="em_valor", disabled=not em_retencao)
 
         if st.button("Gerar Texto do E-mail", type="primary"):
-            # Lógica para dia da semana e formatação do nome
             dias_semana_pt = {0: "segunda-feira", 1: "terça-feira", 2: "quarta-feira", 3: "quinta-feira", 4: "sexta-feira", 5: "sábado", 6: "domingo"}
             dia_semana_str = dias_semana_pt[em_venc_dt.weekday()]
-            
-            # Transforma "Município - Jaraguá" em "MUNICÍPIO DE JARAGUÁ"
             cliente_formatado = em_cliente.upper().replace(" - ", " DE ")
-            
             venc_str_final = em_venc_dt.strftime("%d/%m/%Y")
             
             assunto = f"Emissão DARF - EFD-REINF | {em_comp} - {cliente_formatado}"
             
-            corpo = f"""Prezados,
+            if em_retencao:
+                corpo = f"""Prezados,
 
 Encaminhamos em anexo o DARF referente à Contribuição Previdenciária (INSS) retida da nota fiscal de pagamento efetuado à pessoa jurídica, com competência {em_comp} e vencimento em {venc_str_final} ({dia_semana_str}).
 
@@ -427,6 +545,16 @@ Informamos que a Receita Federal não admite a dedução de valores globais sem 
 Nesses casos, a legislação obriga o Município, na condição de responsável tributário, a aplicar a retenção de 11% sobre 100% do valor bruto do documento fiscal (R$ {em_valor}).
 
 Observação: Solicitamos, por gentileza, a conferência do valor do DARF em conformidade com a nota fiscal e a confirmação do recebimento deste e-mail."""
+            else:
+                corpo = f"""Prezados,
+
+Informamos que, após a análise das movimentações de pagamentos efetuados à pessoa jurídica na competência {em_comp}, constatamos que:
+
+Nenhuma retenção de INSS foi declarada na EFD-REINF.
+
+Consequentemente, não há emissão de DARF para o vencimento de {venc_str_final} ({dia_semana_str}) em relação a essas contribuições.
+
+Qualquer dúvida ou necessidade de verificação, continuamos à disposição. Solicitamos, por gentileza, a confirmação do recebimento deste e-mail."""
 
             st.markdown("##### 📌 Assunto do E-mail")
             st.code(assunto, language="text")
