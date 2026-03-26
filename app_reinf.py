@@ -1,9 +1,8 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v7.0)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.1)
 =============================================================
-UI Glassmorphism, Banco de Dados JSON Duplo (Clientes e Lançamentos),
-Integração Total (Sem necessidade de re-importar planilhas),
-Notificações Toast, Tabelas Word Estilizadas e Lógica Sem DARF.
+UI Glassmorphism, DB JSON Duplo, Agrupamento Hierárquico Duplo
+(Por Órgão e por CNPJ Prestador), Tabelas Estilizadas em Degradê e E-mail.
 """
 import streamlit as st
 import io
@@ -13,6 +12,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
+from collections import defaultdict
 
 from openpyxl import load_workbook
 import pandas as pd
@@ -137,7 +137,6 @@ def salvar_novo_cliente(nome: str, uf: str, cnpj: str):
     with open(ARQUIVO_CLIENTES, "w", encoding="utf-8") as f: json.dump(clientes, f, ensure_ascii=False, indent=4)
 
 def carregar_lancamentos() -> dict:
-    """Carrega o DB NoSQL de lançamentos do servidor."""
     if os.path.exists(ARQUIVO_LANCAMENTOS):
         try:
             with open(ARQUIVO_LANCAMENTOS, "r", encoding="utf-8") as f: return json.load(f)
@@ -145,7 +144,6 @@ def carregar_lancamentos() -> dict:
     return {}
 
 def salvar_lancamentos(cliente: str, competencia: str, dados: list):
-    """Salva lançamentos na nuvem hierarquizados por Cliente -> Competência."""
     db = carregar_lancamentos()
     if cliente not in db: db[cliente] = {}
     db[cliente][competencia] = dados
@@ -175,7 +173,6 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; le
 }
 .block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
 
-/* Componentes Glassmorphism */
 .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
     background: rgba(255, 255, 255, 0.03) !important; backdrop-filter: blur(10px) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 12px !important; color: #fff !important; transition: all 0.3s ease !important;
@@ -189,7 +186,6 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; le
 button[data-baseweb="tab"] { background: transparent !important; color: #7a95ad !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
 button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }
 
-/* Botões Modernos */
 .stButton>button[kind="primary"] {
     background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #0B1E33 !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.2) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
@@ -200,7 +196,7 @@ button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; bo
 """
 st.markdown(_CSS, unsafe_allow_html=True)
 
-# ── Engine do Word & PDF ──────────────────────────────────────────────────────
+# ── Engine do Word & PDF (Agrupamento Duplo Hierárquico) ──────────────────────
 def set_cell_background(cell, fill_color: str):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
@@ -217,44 +213,134 @@ def _brl_fmt(valor: Any) -> str:
 
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
+    
+    # --- CENÁRIO: SEM MOVIMENTO ---
     if not dados_nfs:
         table = doc.add_table(rows=2, cols=6)
         table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
         for i, h in enumerate(headers):
-            cell = table.rows[0].cells[i]; set_cell_background(cell, "1c3f60")
-            p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255); r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cell = table.rows[0].cells[i]; set_cell_background(cell, "D9D9D9")
+            p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         row_msg = table.rows[1].cells
         row_msg[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"
         row_msg[0].merge(row_msg[5]); row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         return table
         
+    # --- CENÁRIO: COM MOVIMENTO ---
     table = doc.add_table(rows=1, cols=6)
     table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
     for i, h in enumerate(headers):
-        cell = table.rows[0].cells[i]; set_cell_background(cell, "1c3f60")
-        p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255); r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-    for nf in dados_nfs:
-        row = table.add_row().cells
-        row[0].text = str(nf.get('Órgão', '')); row[1].text = str(nf.get('CNPJ Tomador', ''))
-        row[2].text = str(nf.get('Nº NF', '')); row[3].text = str(nf.get('CNPJ Prestador', ''))
-        row[4].text = _brl_fmt(nf.get('Total Contrib. Prev.')); row[5].text = _brl_fmt(nf.get('Compensação'))
-        for cell in row:
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for run in p.runs: run.font.size = Pt(10)
+        cell = table.rows[0].cells[i]; set_cell_background(cell, "D9D9D9")
+        p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    total_contrib = sum(safe_float(nf.get('Total Contrib. Prev.')) for nf in dados_nfs)
-    total_compensacao = sum(safe_float(nf.get('Compensação')) for nf in dados_nfs)
-    
+    # Agrupamento Hierárquico: Órgão -> CNPJ Prestador -> Lista de Notas
+    grupos = defaultdict(lambda: defaultdict(list))
+    for nf in dados_nfs:
+        orgao = str(nf.get('Órgão', 'Não Informado')).strip()
+        if not orgao or orgao.lower() == 'none': orgao = 'Não Informado'
+        prestador = str(nf.get('CNPJ Prestador', 'Não Informado')).strip()
+        if not prestador or prestador.lower() == 'none': prestador = 'Não Informado'
+        grupos[orgao][prestador].append(nf)
+
+    total_geral_contrib = 0.0
+    total_geral_comp = 0.0
+
+    # População da Tabela com Subtotais
+    for orgao, prestadores in grupos.items():
+        subtotal_orgao_contrib = 0.0
+        subtotal_orgao_comp = 0.0
+        
+        for prestador, nfs in prestadores.items():
+            subtotal_prest_contrib = 0.0
+            subtotal_prest_comp = 0.0
+            
+            for nf in nfs:
+                row = table.add_row().cells
+                row[0].text = str(nf.get('Órgão', ''))
+                row[1].text = str(nf.get('CNPJ Tomador', ''))
+                row[2].text = str(nf.get('Nº NF', ''))
+                row[3].text = str(nf.get('CNPJ Prestador', ''))
+                
+                v_contrib = safe_float(nf.get('Total Contrib. Prev.'))
+                v_comp = safe_float(nf.get('Compensação'))
+                
+                row[4].text = _brl_fmt(v_contrib)
+                row[5].text = _brl_fmt(v_comp)
+                
+                subtotal_prest_contrib += v_contrib
+                subtotal_prest_comp += v_comp
+                
+                for cell in row:
+                    for p in cell.paragraphs:
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for run in p.runs: run.font.size = Pt(10)
+            
+            # 1. Subtotal por Prestador (Fundo Quase Branco)
+            st_prest_row = table.add_row().cells
+            for cell in st_prest_row: set_cell_background(cell, "FDFDFD")
+            
+            st_prest_row[0].text = f"Subtotal - CNPJ {prestador}"
+            st_prest_row[0].merge(st_prest_row[3])
+            st_prest_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            st_prest_row[4].text = _brl_fmt(subtotal_prest_contrib)
+            st_prest_row[5].text = _brl_fmt(subtotal_prest_comp)
+            
+            for idx in [0, 4, 5]:
+                cell = st_prest_row[idx]
+                p = cell.paragraphs[0]
+                if not p.runs: p.add_run(cell.text)
+                for run in p.runs: 
+                    run.bold = True
+                    run.font.size = Pt(10)
+                if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            subtotal_orgao_contrib += subtotal_prest_contrib
+            subtotal_orgao_comp += subtotal_prest_comp
+
+        # 2. Subtotal por Órgão (Fundo Cinza Suave)
+        st_orgao_row = table.add_row().cells
+        for cell in st_orgao_row: set_cell_background(cell, "F2F2F2")
+        
+        st_orgao_row[0].text = f"Subtotal do Órgão ({orgao})"
+        st_orgao_row[0].merge(st_orgao_row[3])
+        st_orgao_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        st_orgao_row[4].text = _brl_fmt(subtotal_orgao_contrib)
+        st_orgao_row[5].text = _brl_fmt(subtotal_orgao_comp)
+        
+        for idx in [0, 4, 5]:
+            cell = st_orgao_row[idx]
+            p = cell.paragraphs[0]
+            if not p.runs: p.add_run(cell.text)
+            for run in p.runs: 
+                run.bold = True
+                run.font.size = Pt(10)
+            if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        total_geral_contrib += subtotal_orgao_contrib
+        total_geral_comp += subtotal_orgao_comp
+
+    # 3. TOTAL GERAL (Fundo Cinza Destaque)
     t_row = table.add_row().cells
-    for cell in t_row: set_cell_background(cell, "f0f0f0")
-    t_row[3].text = "Total Geral"; t_row[4].text = _brl_fmt(total_contrib); t_row[5].text = _brl_fmt(total_compensacao)
-    for i in [3, 4, 5]:
-        p = t_row[i].paragraphs[0]
-        if not p.runs: p.add_run(t_row[i].text)
-        for run in p.runs: run.bold = True; run.font.size = Pt(10)
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for cell in t_row: set_cell_background(cell, "EAEAEA")
+    
+    t_row[0].text = "TOTAL GERAL"
+    t_row[0].merge(t_row[3])
+    t_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    
+    t_row[4].text = _brl_fmt(total_geral_contrib)
+    t_row[5].text = _brl_fmt(total_geral_comp)
+    
+    for idx in [0, 4, 5]:
+        cell = t_row[idx]
+        p = cell.paragraphs[0]
+        if not p.runs: p.add_run(cell.text)
+        for run in p.runs: 
+            run.bold = True
+            run.font.size = Pt(10)
+        if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
     return table
 
 def replace_everywhere(doc: Document, old: str, new: str) -> None:
@@ -324,7 +410,6 @@ else:
         with c1: cliente_t1 = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t1")
         with c2: comp_t1 = st.text_input("Competência (Para vincular os dados)", value=comp_folha, key="comp_t1")
         
-        # Carrega dados existentes do DB, se houver
         dados_atuais = lancamentos_bd.get(cliente_t1, {}).get(comp_t1, [])
         cols = ["Órgão", "CNPJ Tomador", "Nº NF", "CNPJ Prestador", "Total Contrib. Prev.", "Compensação"]
         
@@ -360,7 +445,12 @@ else:
         with colL:
             st.markdown("<h4 style='color:#fff; font-size:16px;'>1. Configurações do Ato</h4>", unsafe_allow_html=True)
             cliente_sel = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t2")
-            num_ato = st.text_input("Nº do Ato", value="001/2026")
+            
+            c_ato1, c_ato2 = st.columns([2, 1])
+            with c_ato1: num_ato_int = st.number_input("Nº Inicial do Ato", min_value=1, value=1, step=1)
+            with c_ato2: ano_ato = st.text_input("Ano", value=str(datetime.now().year))
+            num_ato = f"{num_ato_int:03d}/{ano_ato}"
+            
             resp_sel = st.selectbox("Responsável", list(RESPONSAVEIS.keys()))
             competencia = st.text_input("Competência", value=comp_folha, key="comp_t2")
             vencimento = st.text_input("Vencimento", value="20/03/2026")
@@ -378,12 +468,11 @@ else:
                 fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos no Sistema)", "📂 Upload de Planilha (.xlsx)"], horizontal=True)
                 
                 if "Nuvem" in fonte_dados:
-                    # Puxa os dados instantaneamente do JSON
                     dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
                     if dados_nfs:
                         st.success(f"✅ {len(dados_nfs)} notas carregadas automaticamente do servidor.")
                     else:
-                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem para este cliente e competência. Vá na aba 'Lançador de Notas' para salvar ou mude a fonte para Upload.")
+                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem. Vá na aba 'Lançador' para salvar ou mude para Upload.")
                         can_run = False
                 else:
                     arq_excel = st.file_uploader("Upload da Planilha Excel (.xlsx)", type=["xlsx"])
@@ -398,7 +487,7 @@ else:
                 st.info("ℹ️ Declaração sem movimento. A grelha de lançamentos será omitida.")
 
             if st.button("Gerar Documentos Finais", type="primary", use_container_width=True, disabled=not can_run):
-                with st.spinner("Compilando Documento..."):
+                with st.spinner("Compilando Documento com Subtotais Analíticos..."):
                     chk_reinf = "☒" if tipo_darf == "Reinf" else "☐"
                     chk_avulso = "☒" if tipo_darf == "Avulso" else "☐"
                     uf = clientes_bd[cliente_sel].get("UF", "")
