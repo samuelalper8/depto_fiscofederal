@@ -1,12 +1,14 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v5.0)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v7.0)
 =============================================================
-UI Glassmorphism, Fontes Space Grotesk/Inter, Animações CSS, 
-Tabelas Word Estilizadas via XML, PDF Export e Lógica Sem DARF.
+UI Glassmorphism, Banco de Dados JSON Duplo (Clientes e Lançamentos),
+Integração Total (Sem necessidade de re-importar planilhas),
+Notificações Toast, Tabelas Word Estilizadas e Lógica Sem DARF.
 """
 import streamlit as st
 import io
 import os
+import json
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
@@ -28,189 +30,231 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Dicionários de Dados (Omitidos parcialmente para brevidade) ───────────────
-CLIENTES: Dict[str, Dict[str, str]] = {
+# ── Bancos de Dados Locais (JSON / NoSQL) ─────────────────────────────────────
+ARQUIVO_CLIENTES = "clientes.json"
+ARQUIVO_LANCAMENTOS = "lancamentos.json"
+
+CLIENTES_PADRAO: Dict[str, Dict[str, str]] = {
     "Legislativo - Eldorado": {"UF": "MS", "CNPJ": "70.524.376/0001-80"},
     "Município - Uirapuru": {"UF": "GO", "CNPJ": "37.622.164/0001-60"},
-    # ... (Mantenha o seu dicionário completo de clientes aqui) ...
+    "Município - Santa Maria do Tocantins": {"UF": "TO", "CNPJ": "37.421.039/0001-92"},
+    "Município - Lajeado": {"UF": "TO", "CNPJ": "37.420.650/0001-04"},
+    "Município - Jaú do Tocantins": {"UF": "TO", "CNPJ": "37.344.413/0001-01"},
+    "Município - Alcinópolis": {"UF": "MS", "CNPJ": "37.226.651/0001-04"},
+    "Município - Teresina de Goiás": {"UF": "GO", "CNPJ": "25.105.339/0001-83"},
+    "Município - Goianorte": {"UF": "TO", "CNPJ": "25.086.612/0001-70"},
+    "Município - Palmeiras do Tocantins": {"UF": "TO", "CNPJ": "25.064.056/0001-30"},
+    "Município - Maurilândia do Tocantins": {"UF": "TO", "CNPJ": "25.064.015/0001-44"},
+    "Município - São Valério": {"UF": "TO", "CNPJ": "25.043.449/0001-68"},
+    "Legislativo - Rio Verde": {"UF": "GO", "CNPJ": "25.040.627/0001-05"},
+    "Município - Perolândia": {"UF": "GO", "CNPJ": "24.859.324/0001-48"},
+    "Município - Rio Quente": {"UF": "GO", "CNPJ": "24.852.675/0001-27"},
+    "Município - Sonora": {"UF": "MS", "CNPJ": "24.651.234/0001-67"},
+    "Município - Chapadão do Sul": {"UF": "MS", "CNPJ": "24.651.200/0001-72"},
+    "Município - Japorã": {"UF": "MS", "CNPJ": "15.905.342/0001-28"},
+    "Autarquia - SAAE de Jaraguari": {"UF": "MS", "CNPJ": "15.435.936/0001-12"},
+    "RPPS - Baliza": {"UF": "GO", "CNPJ": "11.329.148/0001-90"},
+    "RPPS - Piranhas": {"UF": "GO", "CNPJ": "07.578.154/0001-04"},
+    "RPPS - Serranópolis": {"UF": "GO", "CNPJ": "05.433.433/0001-54"},
+    "RPPS - Itaberaí": {"UF": "GO", "CNPJ": "05.370.217/0001-07"},
+    "Autarquia - Goiatuba IAG": {"UF": "GO", "CNPJ": "05.098.663/0001-04"},
+    "RPPS - Trindade": {"UF": "GO", "CNPJ": "05.015.173/0001-05"},
+    "RPPS - Barro Alto": {"UF": "GO", "CNPJ": "05.004.744/0001-06"},
+    "RPPS - Crixás": {"UF": "GO", "CNPJ": "04.739.716/0001-66"},
+    "Legislativo - Ceres": {"UF": "GO", "CNPJ": "04.340.201/0001-99"},
+    "RPPS - Sonora": {"UF": "MS", "CNPJ": "04.318.288/0001-06"},
+    "Município - Sete Quedas": {"UF": "MS", "CNPJ": "03.889.011/0001-62"},
+    "Município - Tacuru": {"UF": "MS", "CNPJ": "03.888.989/0001-00"},
+    "Município - Iguatemi": {"UF": "MS", "CNPJ": "03.568.318/0001-61"},
+    "Município - Coxim": {"UF": "MS", "CNPJ": "03.510.211/0001-62"},
+    "Município - Jaraguari": {"UF": "MS", "CNPJ": "03.501.533/0001-45"},
+    "Município - Anastácio": {"UF": "MS", "CNPJ": "03.452.307/0001-11"},
+    "Município - Brejinho de Nazaré": {"UF": "TO", "CNPJ": "02.884.153/0001-74"},
+    "Município - Pilar de Goiás": {"UF": "GO", "CNPJ": "02.647.303/0001-26"},
+    "Município - São Francisco de Goiás": {"UF": "GO", "CNPJ": "02.468.437/0001-80"},
+    "Município - Itaberaí": {"UF": "GO", "CNPJ": "02.451.938/0001-53"},
+    "Município - Peixe": {"UF": "TO", "CNPJ": "02.396.166/0001-02"},
+    "Município - Crixás": {"UF": "GO", "CNPJ": "02.382.067/0001-63"},
+    "Município - Barro Alto": {"UF": "GO", "CNPJ": "02.355.675/0001-89"},
+    "Legislativo - Itapaci": {"UF": "GO", "CNPJ": "02.353.368/0001-69"},
+    "Município - Córrego do Ouro": {"UF": "GO", "CNPJ": "02.321.115/0001-03"},
+    "Município - São Luís de Montes Belos": {"UF": "GO", "CNPJ": "02.320.406/0001-87"},
+    "Município - Goiás": {"UF": "GO", "CNPJ": "02.295.772/0001-23"},
+    "Legislativo - Perolândia": {"UF": "GO", "CNPJ": "02.254.179/0001-39"},
+    "Legislativo - Jaraguari": {"UF": "MS", "CNPJ": "02.210.819/0001-09"},
+    "Município - Pedro Afonso": {"UF": "TO", "CNPJ": "02.070.589/0001-20"},
+    "Município - Guaraí": {"UF": "TO", "CNPJ": "02.070.548/0001-33"},
+    "Município - Paranaiguara": {"UF": "GO", "CNPJ": "02.056.745/0001-06"},
+    "Município - Natividade": {"UF": "TO", "CNPJ": "01.809.474/0001-41"},
+    "Município - Montes Claros de Goiás": {"UF": "GO", "CNPJ": "01.767.722/0001-39"},
+    "Município - Brazabrantes": {"UF": "GO", "CNPJ": "01.756.741/0001-60"},
+    "Município - Goiatuba": {"UF": "GO", "CNPJ": "01.753.722/0001-80"},
+    "Legislativo - São Luís de Montes Belos": {"UF": "GO", "CNPJ": "01.725.501/0001-06"},
+    "Município - Aguiarnópolis": {"UF": "TO", "CNPJ": "01.634.074/0001-42"},
+    "Município - Novo Gama": {"UF": "GO", "CNPJ": "01.629.276/0001-04"},
+    "Município - Santa Rita do Tocantins": {"UF": "TO", "CNPJ": "01.613.127/0001-49"},
+    "Município - Bandeirantes do Tocantins": {"UF": "TO", "CNPJ": "01.612.819/0001-72"},
+    "Município - Barra do Ouro": {"UF": "TO", "CNPJ": "01.612.818/0001-28"},
+    "Autarquia - Goiatuba FESG": {"UF": "GO", "CNPJ": "01.494.665/0001-61"},
+    "Município - Amaralina": {"UF": "GO", "CNPJ": "01.492.098/0001-04"},
+    "Legislativo - Peixe": {"UF": "TO", "CNPJ": "01.447.812/0001-42"},
+    "Município - Buriti Alegre": {"UF": "GO", "CNPJ": "01.345.909/0001-44"},
+    "Município - Serranópolis": {"UF": "GO", "CNPJ": "01.343.086/0001-18"},
+    "Município - Rianápolis": {"UF": "GO", "CNPJ": "01.300.094/0001-87"},
+    "Município - Jaraguá": {"UF": "GO", "CNPJ": "01.223.916/0001-73"},
+    "Município - Trindade": {"UF": "GO", "CNPJ": "01.217.538/0001-15"},
+    "Município - Pium": {"UF": "TO", "CNPJ": "01.189.497/0001-09"},
+    "Município - Piranhas": {"UF": "GO", "CNPJ": "01.168.145/0001-69"},
+    "Município - Caiapônia": {"UF": "GO", "CNPJ": "01.164.946/0001-56"},
+    "Município - Almas": {"UF": "TO", "CNPJ": "01.138.551/0001-89"},
+    "Município - Cristalina": {"UF": "GO", "CNPJ": "01.138.122/0001-01"},
+    "Município - Itapaci": {"UF": "GO", "CNPJ": "01.134.808/0001-24"},
+    "Município - Ceres": {"UF": "GO", "CNPJ": "01.131.713/0001-57"},
+    "Município - Corumbá de Goiás": {"UF": "GO", "CNPJ": "01.118.850/0001-51"},
+    "Município - Hidrolina": {"UF": "GO", "CNPJ": "01.067.230/0001-30"},
+    "Município - Cristalândia": {"UF": "TO", "CNPJ": "01.067.156/0001-52"},
+    "Município - Baliza": {"UF": "GO", "CNPJ": "01.067.131/0001-59"},
+    "Município - Bela Vista de Goiás": {"UF": "GO", "CNPJ": "01.005.917/0001-41"},
+    "Legislativo - Costa Rica": {"UF": "MS", "CNPJ": "00.991.547/0001-04"},
+    "Legislativo - Catalão": {"UF": "GO", "CNPJ": "00.833.942/0001-50"},
+    "Município - Paraíso do Tocantins": {"UF": "TO", "CNPJ": "00.299.180/0001-54"},
+    "Município - Campinaçu": {"UF": "GO", "CNPJ": "00.145.789/0001-79"},
+    "Município - Silvanópolis": {"UF": "TO", "CNPJ": "00.114.819/0001-80"},
+    "Município - Palmeirópolis": {"UF": "TO", "CNPJ": "00.007.401/0001-73"}
 }
+
+def carregar_clientes() -> dict:
+    if os.path.exists(ARQUIVO_CLIENTES):
+        try:
+            with open(ARQUIVO_CLIENTES, "r", encoding="utf-8") as f: return json.load(f)
+        except: pass
+    with open(ARQUIVO_CLIENTES, "w", encoding="utf-8") as f: json.dump(CLIENTES_PADRAO, f, ensure_ascii=False, indent=4)
+    return CLIENTES_PADRAO
+
+def salvar_novo_cliente(nome: str, uf: str, cnpj: str):
+    clientes = carregar_clientes()
+    clientes[nome] = {"UF": uf.upper(), "CNPJ": cnpj}
+    with open(ARQUIVO_CLIENTES, "w", encoding="utf-8") as f: json.dump(clientes, f, ensure_ascii=False, indent=4)
+
+def carregar_lancamentos() -> dict:
+    """Carrega o DB NoSQL de lançamentos do servidor."""
+    if os.path.exists(ARQUIVO_LANCAMENTOS):
+        try:
+            with open(ARQUIVO_LANCAMENTOS, "r", encoding="utf-8") as f: return json.load(f)
+        except: pass
+    return {}
+
+def salvar_lancamentos(cliente: str, competencia: str, dados: list):
+    """Salva lançamentos na nuvem hierarquizados por Cliente -> Competência."""
+    db = carregar_lancamentos()
+    if cliente not in db: db[cliente] = {}
+    db[cliente][competencia] = dados
+    with open(ARQUIVO_LANCAMENTOS, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False, indent=4)
 
 RESPONSAVEIS: Dict[str, str] = {
     "Wênia Rodrigues": "1024", "Aline Moreno": "1021",
     "Gustavo Nogueira": "1023", "Rafael Reis": "1022", "Samuel Almeida": "1020"
 }
 
-# ── CSS Premium (Glassmorphism, Glow, Fade-in, Space Grotesk) ─────────────────
+# ── CSS Premium ───────────────────────────────────────────────────────────────
 _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
 
-/* Fundo com Iluminação Ambiente Radial */
 .stApp {
     background: radial-gradient(circle at 15% 50%, rgba(26, 111, 175, 0.1), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%),
-                #0B1E33 !important;
+                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #0B1E33 !important;
 }
 
-html, body, p, span, div, label, li {
-    font-family: 'Inter', sans-serif !important;
-    color: #dce8f2;
-}
+html, body, p, span, div, label, li { font-family: 'Inter', sans-serif !important; color: #dce8f2; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; }
 
-h1, h2, h3, h4, h5, h6 {
-    font-family: 'Space Grotesk', sans-serif !important;
-    letter-spacing: -0.5px;
-}
-
-/* Animação Global de Entrada (Fade + Slide) */
 @keyframes fadeSlideUp {
     0% { opacity: 0; transform: translateY(20px); }
     100% { opacity: 1; transform: translateY(0); }
 }
-.block-container {
-    animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    padding-top: 2rem !important;
-}
+.block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
 
-/* Glassmorphism nas Caixas de Inputs */
+/* Componentes Glassmorphism */
 .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
-    background: rgba(255, 255, 255, 0.03) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 12px !important;
-    color: #fff !important;
-    transition: all 0.3s ease !important;
+    background: rgba(255, 255, 255, 0.03) !important; backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 12px !important; color: #fff !important; transition: all 0.3s ease !important;
 }
-
-/* Efeito Glow no Foco/Hover */
 .stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus, [data-baseweb="select"]>div:focus-within {
-    border-color: rgba(45, 143, 212, 0.5) !important;
-    box-shadow: 0 0 20px rgba(45, 143, 212, 0.2) !important;
-    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(45, 143, 212, 0.5) !important; box-shadow: 0 0 20px rgba(45, 143, 212, 0.2) !important; background: rgba(255, 255, 255, 0.06) !important;
 }
-
-/* Labels */
 .stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {
-    color: #7a95ad !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    color: #7a95ad !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
 }
+button[data-baseweb="tab"] { background: transparent !important; color: #7a95ad !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
+button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }
 
-/* Botão Primário Premium */
+/* Botões Modernos */
 .stButton>button[kind="primary"] {
-    background: linear-gradient(135deg, #F29F05, #d78904) !important;
-    color: #0B1E33 !important;
-    font-weight: 700 !important;
-    font-family: 'Space Grotesk', sans-serif !important;
-    border: none !important;
-    border-radius: 12px !important;
-    padding: 12px 28px !important;
-    box-shadow: 0 4px 15px rgba(242, 159, 5, 0.2) !important;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #0B1E33 !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.2) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
-.stButton>button[kind="primary"]:hover {
-    transform: translateY(-2px) scale(1.02) !important;
-    box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important;
-}
+.stButton>button[kind="primary"]:hover { transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }
 
-/* Menus de topo ocultos para imersão */
 #MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] { display: none !important; }
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
 
-# ── Funções Auxiliares ────────────────────────────────────────────────────────
+# ── Engine do Word & PDF ──────────────────────────────────────────────────────
 def set_cell_background(cell, fill_color: str):
-    """Injeta XML para colorir o fundo de uma célula da tabela do Word."""
     tcPr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), fill_color)
+    shd.set(qn('w:val'), 'clear'); shd.set(qn('w:color'), 'auto'); shd.set(qn('w:fill'), fill_color)
     tcPr.append(shd)
 
 def safe_float(value: Any) -> float:
     if value is None: return 0.0
-    try: return float(value)
+    try: return float(str(value).replace(',', '.')) if isinstance(value, str) else float(value)
     except (ValueError, TypeError): return 0.0
 
 def _brl_fmt(valor: Any) -> str:
     return f"R$ {safe_float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-# ── Construção da Tabela Word Premium ─────────────────────────────────────────
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
-    
     if not dados_nfs:
         table = doc.add_table(rows=2, cols=6)
-        table.style = 'Table Grid'
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        
+        table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
         for i, h in enumerate(headers):
-            cell = table.rows[0].cells[i]
-            set_cell_background(cell, "1c3f60") # Azul Escuro
-            p = cell.paragraphs[0]
-            r = p.add_run(h)
-            r.font.bold = True
-            r.font.color.rgb = RGBColor(255, 255, 255)
-            r.font.size = Pt(10)
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
+            cell = table.rows[0].cells[i]; set_cell_background(cell, "1c3f60")
+            p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255); r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         row_msg = table.rows[1].cells
         row_msg[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"
-        row_msg[0].merge(row_msg[5]) 
-        row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        row_msg[0].merge(row_msg[5]); row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         return table
         
     table = doc.add_table(rows=1, cols=6)
-    table.style = 'Table Grid'
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
-    # Cabeçalho Premium
+    table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
     for i, h in enumerate(headers):
-        cell = table.rows[0].cells[i]
-        set_cell_background(cell, "1c3f60")
-        p = cell.paragraphs[0]
-        r = p.add_run(h)
-        r.font.bold = True
-        r.font.color.rgb = RGBColor(255, 255, 255)
-        r.font.size = Pt(10)
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell = table.rows[0].cells[i]; set_cell_background(cell, "1c3f60")
+        p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255); r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
     for nf in dados_nfs:
         row = table.add_row().cells
-        row[0].text = str(nf.get('Órgão', ''))
-        row[1].text = str(nf.get('CNPJ Tomador', ''))
-        row[2].text = str(nf.get('Nº NF', ''))
-        row[3].text = str(nf.get('CNPJ Prestador', ''))
-        row[4].text = _brl_fmt(nf.get('Total Contrib. Prev.'))
-        row[5].text = _brl_fmt(nf.get('Compensação'))
+        row[0].text = str(nf.get('Órgão', '')); row[1].text = str(nf.get('CNPJ Tomador', ''))
+        row[2].text = str(nf.get('Nº NF', '')); row[3].text = str(nf.get('CNPJ Prestador', ''))
+        row[4].text = _brl_fmt(nf.get('Total Contrib. Prev.')); row[5].text = _brl_fmt(nf.get('Compensação'))
         for cell in row:
             for p in cell.paragraphs:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in p.runs: run.font.size = Pt(10)
 
-    # Linha Totalizadora Premium
     total_contrib = sum(safe_float(nf.get('Total Contrib. Prev.')) for nf in dados_nfs)
     total_compensacao = sum(safe_float(nf.get('Compensação')) for nf in dados_nfs)
     
     t_row = table.add_row().cells
-    for cell in t_row: set_cell_background(cell, "f0f0f0") # Cinza claro
-    
-    t_row[3].text = "Total Geral"
-    t_row[4].text = _brl_fmt(total_contrib)
-    t_row[5].text = _brl_fmt(total_compensacao)
+    for cell in t_row: set_cell_background(cell, "f0f0f0")
+    t_row[3].text = "Total Geral"; t_row[4].text = _brl_fmt(total_contrib); t_row[5].text = _brl_fmt(total_compensacao)
     for i in [3, 4, 5]:
         p = t_row[i].paragraphs[0]
         if not p.runs: p.add_run(t_row[i].text)
-        for run in p.runs: 
-            run.bold = True
-            run.font.size = Pt(10)
+        for run in p.runs: run.bold = True; run.font.size = Pt(10)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
     return table
 
 def replace_everywhere(doc: Document, old: str, new: str) -> None:
@@ -219,7 +263,6 @@ def replace_everywhere(doc: Document, old: str, new: str) -> None:
             for run in par.runs:
                 if old in run.text: run.text = run.text.replace(old, new)
             if old in par.text: par.text = par.text.replace(old, new)
-
     for p in doc.paragraphs: repl(p)
     for t in doc.tables:
         for row in t.rows:
@@ -227,33 +270,21 @@ def replace_everywhere(doc: Document, old: str, new: str) -> None:
                 for p in cell.paragraphs: repl(p)
 
 def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
-    """Usa o LibreOffice em Nuvem para converter DOCX para PDF de forma robusta."""
     with tempfile.TemporaryDirectory() as tmpdir:
         docx_path = os.path.join(tmpdir, "temp.docx")
-        with open(docx_path, "wb") as f:
-            f.write(docx_bytes)
-            
+        with open(docx_path, "wb") as f: f.write(docx_bytes)
         try:
-            # Comando Linux Headless para converter para PDF
-            subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, docx_path], 
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+            subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, docx_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             pdf_path = os.path.join(tmpdir, "temp.pdf")
             if os.path.exists(pdf_path):
-                with open(pdf_path, "rb") as f:
-                    return f.read()
-        except FileNotFoundError:
-            st.warning("⚠️ LibreOffice não instalado no servidor. O recurso de PDF está indisponível.")
-        except Exception as e:
-            st.error(f"Erro ao converter PDF: {e}")
+                with open(pdf_path, "rb") as f: return f.read()
+        except Exception: return None
     return None
 
 # ── App Principal ─────────────────────────────────────────────────────────────
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    # TELA DE LOGIN GLASSMORPHISM
     _, col, _ = st.columns([1.4, 1, 1.4])
     with col:
         st.markdown("""
@@ -265,12 +296,12 @@ if not st.session_state["authenticated"]:
         pwd = st.text_input("Credencial de Acesso", type="password", placeholder="••••••••", label_visibility="collapsed")
         if st.button("Acessar Plataforma", type="primary", use_container_width=True):
             if pwd == st.secrets.get("APP_PASSWORD", "conprev2026"):
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else:
-                st.error("Credencial inválida.")
+                st.session_state["authenticated"] = True; st.rerun()
+            else: st.error("Credencial inválida.")
 else:
-    # DASHBOARD
+    clientes_bd = carregar_clientes()
+    lancamentos_bd = carregar_lancamentos()
+    
     st.markdown("""
     <div style="display:flex;align-items:center;gap:16px;padding:10px 0 20px;">
       <div style="width:48px;height:48px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 20px rgba(242,159,5,.4)">📄</div>
@@ -279,20 +310,60 @@ else:
       </div>
     </div>""", unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["⚙️ Gerador Oficial (Word & PDF)", "📝 Lançador Auxiliar de Tabela"])
+    tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
     
+    hoje = datetime.now()
+    comp_folha = f"{(hoje.replace(day=1) - timedelta(days=1)).month:02d}/{(hoje.replace(day=1) - timedelta(days=1)).year}"
+    
+    # --- TAB 1: LANÇADOR (INTEGRADO NA NUVEM) ---
     with tab1:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#fff; font-size:16px;'>Edição e Salvamento Rápido na Nuvem</h4>", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns(2)
+        with c1: cliente_t1 = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t1")
+        with c2: comp_t1 = st.text_input("Competência (Para vincular os dados)", value=comp_folha, key="comp_t1")
+        
+        # Carrega dados existentes do DB, se houver
+        dados_atuais = lancamentos_bd.get(cliente_t1, {}).get(comp_t1, [])
+        cols = ["Órgão", "CNPJ Tomador", "Nº NF", "CNPJ Prestador", "Total Contrib. Prev.", "Compensação"]
+        
+        if dados_atuais:
+            df_base = pd.DataFrame(dados_atuais)
+            st.info(f"📂 Encontrados {len(dados_atuais)} lançamentos salvos no servidor para esta competência.")
+        else:
+            df_base = pd.DataFrame(columns=cols)
+            for _ in range(5): df_base.loc[len(df_base)] = [None]*6
+            
+        df_editado = st.data_editor(df_base, num_rows="dynamic", use_container_width=True)
+        
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("💾 Salvar Lançamentos na Nuvem", type="primary", use_container_width=True):
+                df_limpo = df_editado.dropna(how="all").where(pd.notnull(df_editado), None)
+                dados_salvar = df_limpo.to_dict(orient="records")
+                salvar_lancamentos(cliente_t1, comp_t1, dados_salvar)
+                st.toast(f"Lançamentos salvos para {cliente_t1}!", icon='☁️')
+                st.rerun()
+                
+        with c_btn2:
+            df_export = df_editado.dropna(how="all")
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df_export.to_excel(writer, sheet_name="Valores", index=False)
+            st.download_button("📥 Baixar Planilha (.xlsx)", data=output.getvalue(), file_name="Lançamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+    # --- TAB 2: GERADOR ---
+    with tab2:
         st.markdown("<br>", unsafe_allow_html=True)
         colL, colR = st.columns([1, 1], gap="large")
         
         with colL:
             st.markdown("<h4 style='color:#fff; font-size:16px;'>1. Configurações do Ato</h4>", unsafe_allow_html=True)
-            cliente_sel = st.selectbox("Cliente", list(CLIENTES.keys()))
+            cliente_sel = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t2")
             num_ato = st.text_input("Nº do Ato", value="001/2026")
             resp_sel = st.selectbox("Responsável", list(RESPONSAVEIS.keys()))
-            competencia = st.text_input("Competência", value="02/2026")
+            competencia = st.text_input("Competência", value=comp_folha, key="comp_t2")
             vencimento = st.text_input("Vencimento", value="20/03/2026")
-            
             tipo_darf = st.radio("Tipo de Documento", ["Reinf", "Avulso", "Sem DARF"], horizontal=True)
             
         with colR:
@@ -300,46 +371,48 @@ else:
             houve_retencao = st.checkbox("✅ Houve retenções a declarar?", value=True)
             
             arq_excel = None
-            if houve_retencao:
-                arq_excel = st.file_uploader("Upload da Planilha Excel (.xlsx)", type=["xlsx"])
-            else:
-                st.info("ℹ️ Declaração sem movimento. A grelha de lançamentos será omitida.")
-
-            can_run = bool(arq_excel) if houve_retencao else True
+            dados_nfs = []
+            can_run = True
             
-            if st.button("Gerar Documentos Finais", type="primary", use_container_width=True, disabled=not can_run):
-                with st.spinner("Compilando Documento..."):
-                    # Extrai dados (se houver)
-                    dados_nfs = []
-                    if houve_retencao and arq_excel:
+            if houve_retencao:
+                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos no Sistema)", "📂 Upload de Planilha (.xlsx)"], horizontal=True)
+                
+                if "Nuvem" in fonte_dados:
+                    # Puxa os dados instantaneamente do JSON
+                    dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
+                    if dados_nfs:
+                        st.success(f"✅ {len(dados_nfs)} notas carregadas automaticamente do servidor.")
+                    else:
+                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem para este cliente e competência. Vá na aba 'Lançador de Notas' para salvar ou mude a fonte para Upload.")
+                        can_run = False
+                else:
+                    arq_excel = st.file_uploader("Upload da Planilha Excel (.xlsx)", type=["xlsx"])
+                    can_run = bool(arq_excel)
+                    if can_run:
                         wb = load_workbook(io.BytesIO(arq_excel.getvalue()), data_only=True)
                         aba = [n for n in wb.sheetnames if n.lower().startswith("valores")][0]
                         ws = wb[aba]
                         headers = [str(c.value) for c in ws[1]]
                         dados_nfs = [dict(zip(headers, r)) for r in ws.iter_rows(min_row=2, values_only=True) if not all(c is None for c in r)]
+            else:
+                st.info("ℹ️ Declaração sem movimento. A grelha de lançamentos será omitida.")
 
-                    # Lógica Sem DARF / Reinf / Avulso
+            if st.button("Gerar Documentos Finais", type="primary", use_container_width=True, disabled=not can_run):
+                with st.spinner("Compilando Documento..."):
                     chk_reinf = "☒" if tipo_darf == "Reinf" else "☐"
                     chk_avulso = "☒" if tipo_darf == "Avulso" else "☐"
-                    
-                    uf = CLIENTES[cliente_sel].get("UF", "")
+                    uf = clientes_bd[cliente_sel].get("UF", "")
                     
                     contexto = {
-                        '{{numero_ato}}': num_ato,
-                        '{{data_emissao}}': datetime.now().strftime('%d/%m/%Y'),
+                        '{{numero_ato}}': num_ato, '{{data_emissao}}': datetime.now().strftime('%d/%m/%Y'),
                         '{{municipio_uf}}': f"{cliente_sel} / {uf}" if uf else cliente_sel,
-                        '{{competencia}}': competencia,
-                        '{{vencimento}}': vencimento,
-                        '{{responsavel}}': resp_sel,
-                        '{{ramal}}': RESPONSAVEIS[resp_sel],
-                        '{{check_reinf}}': chk_reinf,
-                        '{{check_avulso}}': chk_avulso
+                        '{{competencia}}': competencia, '{{vencimento}}': vencimento,
+                        '{{responsavel}}': resp_sel, '{{ramal}}': RESPONSAVEIS[resp_sel],
+                        '{{check_reinf}}': chk_reinf, '{{check_avulso}}': chk_avulso
                     }
                     
                     try:
-                        with open("Modelo_Folha_Rosto.docx", "rb") as f:
-                            doc = Document(io.BytesIO(f.read()))
-                        
+                        with open("Modelo_Folha_Rosto.docx", "rb") as f: doc = Document(io.BytesIO(f.read()))
                         for k, v in contexto.items(): replace_everywhere(doc, k, v)
                         
                         tabela = criar_tabela_reinf(doc, dados_nfs)
@@ -352,20 +425,36 @@ else:
                         doc.save(buf_docx)
                         bytes_docx = buf_docx.getvalue()
                         
-                        st.success("✅ Documento compilado com sucesso!")
+                        st.toast('Documento Word gerado com sucesso!', icon='🎉')
                         
                         dl1, dl2 = st.columns(2)
-                        with dl1:
-                            st.download_button("📥 Baixar WORD (.docx)", data=bytes_docx, file_name=f"Folha Rosto - {cliente_sel}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+                        with dl1: st.download_button("📥 Baixar WORD (.docx)", data=bytes_docx, file_name=f"Folha Rosto - {cliente_sel}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
                         
-                        # Tenta converter para PDF
                         with st.spinner("Gerando PDF..."):
                             bytes_pdf = converter_para_pdf(bytes_docx)
                             with dl2:
-                                if bytes_pdf:
-                                    st.download_button("📥 Baixar PDF (.pdf)", data=bytes_pdf, file_name=f"Folha Rosto - {cliente_sel}.pdf", mime="application/pdf", use_container_width=True)
-                                else:
-                                    st.button("🚫 PDF Indisponível (Sem LibreOffice)", disabled=True, use_container_width=True)
-                                    
+                                if bytes_pdf: st.download_button("📥 Baixar PDF (.pdf)", data=bytes_pdf, file_name=f"Folha Rosto - {cliente_sel}.pdf", mime="application/pdf", use_container_width=True)
+                                else: st.button("🚫 PDF Indisponível (Instale LibreOffice)", disabled=True, use_container_width=True)
                     except Exception as e:
                         st.error(f"❌ Erro crítico: {e}")
+
+    # --- TAB 3: GESTÃO DE CLIENTES ---
+    with tab3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='padding:20px; background:rgba(255,255,255,0.02); border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#fff; font-size:18px; margin-bottom:15px;'>🏢 Cadastrar Novo Cliente no Sistema</h4>", unsafe_allow_html=True)
+        
+        with st.form("form_novo_cliente", clear_on_submit=True):
+            cc1, cc2, cc3 = st.columns([2, 1, 1])
+            with cc1: novo_nome = st.text_input("Nome (Ex: Município - São Paulo)")
+            with cc2: nova_uf = st.text_input("UF (Ex: SP)", max_chars=2)
+            with cc3: novo_cnpj = st.text_input("CNPJ (Com pontuação)")
+            
+            if st.form_submit_button("Salvar Cliente na Base de Dados", type="primary", use_container_width=True):
+                if novo_nome and nova_uf and novo_cnpj:
+                    salvar_novo_cliente(novo_nome, nova_uf, novo_cnpj)
+                    st.toast(f'Cliente "{novo_nome}" salvo com sucesso!', icon='💾')
+                    st.rerun()
+                else:
+                    st.error("Preencha todos os campos para cadastrar um novo cliente.")
+        st.markdown("</div>", unsafe_allow_html=True)
