@@ -1,8 +1,8 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.2 - Light Mode)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.3 - Light Mode Final)
 =============================================================
-UI Glassmorphism Claro, DB JSON Duplo, Agrupamento Hierárquico Duplo
-(Por Órgão e por CNPJ Prestador), Tabelas Estilizadas em Degradê e E-mail.
+UI Glassmorphism Claro, DB JSON Duplo, Agrupamento Hierárquico Duplo,
+Correção do Session State, Tabelas Estilizadas em Degradê e E-mail.
 """
 import streamlit as st
 import io
@@ -29,6 +29,11 @@ st.set_page_config(
     page_icon="🌌", layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# 🔴 BLINDAGEM DE ESTADO (Correção do Erro) 🔴
+# Garante que a segurança inicie antes de qualquer coisa carregar na tela
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
 # ── Bancos de Dados Locais (JSON / NoSQL) ─────────────────────────────────────
 ARQUIVO_CLIENTES = "clientes.json"
@@ -159,7 +164,6 @@ _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
 
-/* Fundo Modo Claro com Iluminação Suave */
 .stApp {
     background: radial-gradient(circle at 15% 50%, rgba(45, 143, 212, 0.08), transparent 25%),
                 radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #F8FAFC !important;
@@ -174,7 +178,6 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; le
 }
 .block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
 
-/* Componentes Glassmorphism Claro */
 .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
     background: rgba(255, 255, 255, 0.8) !important; backdrop-filter: blur(10px) !important;
     border: 1px solid rgba(0, 0, 0, 0.08) !important; border-radius: 12px !important; color: #2D3748 !important; transition: all 0.3s ease !important;
@@ -201,7 +204,7 @@ button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; bo
 """
 st.markdown(_CSS, unsafe_allow_html=True)
 
-# ── Engine do Word & PDF (Agrupamento Duplo Hierárquico) ──────────────────────
+# ── Engine do Word & PDF ──────────────────────────────────────────────────────
 def set_cell_background(cell, fill_color: str):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
@@ -219,7 +222,6 @@ def _brl_fmt(valor: Any) -> str:
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
     
-    # --- CENÁRIO: SEM MOVIMENTO ---
     if not dados_nfs:
         table = doc.add_table(rows=2, cols=6)
         table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -231,14 +233,12 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         row_msg[0].merge(row_msg[5]); row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         return table
         
-    # --- CENÁRIO: COM MOVIMENTO ---
     table = doc.add_table(rows=1, cols=6)
     table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
     for i, h in enumerate(headers):
         cell = table.rows[0].cells[i]; set_cell_background(cell, "D9D9D9")
         p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Agrupamento Hierárquico: Órgão -> CNPJ Prestador -> Lista de Notas
     grupos = defaultdict(lambda: defaultdict(list))
     for nf in dados_nfs:
         orgao = str(nf.get('Órgão', 'Não Informado')).strip()
@@ -250,7 +250,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     total_geral_contrib = 0.0
     total_geral_comp = 0.0
 
-    # População da Tabela com Subtotais
     for orgao, prestadores in grupos.items():
         subtotal_orgao_contrib = 0.0
         subtotal_orgao_comp = 0.0
@@ -280,14 +279,11 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         for run in p.runs: run.font.size = Pt(10)
             
-            # 1. Subtotal por Prestador
             st_prest_row = table.add_row().cells
             for cell in st_prest_row: set_cell_background(cell, "FDFDFD")
-            
             st_prest_row[0].text = f"Subtotal - CNPJ {prestador}"
             st_prest_row[0].merge(st_prest_row[3])
             st_prest_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            
             st_prest_row[4].text = _brl_fmt(subtotal_prest_contrib)
             st_prest_row[5].text = _brl_fmt(subtotal_prest_comp)
             
@@ -295,22 +291,17 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
                 cell = st_prest_row[idx]
                 p = cell.paragraphs[0]
                 if not p.runs: p.add_run(cell.text)
-                for run in p.runs: 
-                    run.bold = True
-                    run.font.size = Pt(10)
+                for run in p.runs: run.bold = True; run.font.size = Pt(10)
                 if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             subtotal_orgao_contrib += subtotal_prest_contrib
             subtotal_orgao_comp += subtotal_prest_comp
 
-        # 2. Subtotal por Órgão
         st_orgao_row = table.add_row().cells
         for cell in st_orgao_row: set_cell_background(cell, "F2F2F2")
-        
         st_orgao_row[0].text = f"Subtotal do Órgão ({orgao})"
         st_orgao_row[0].merge(st_orgao_row[3])
         st_orgao_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        
         st_orgao_row[4].text = _brl_fmt(subtotal_orgao_contrib)
         st_orgao_row[5].text = _brl_fmt(subtotal_orgao_comp)
         
@@ -318,22 +309,17 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             cell = st_orgao_row[idx]
             p = cell.paragraphs[0]
             if not p.runs: p.add_run(cell.text)
-            for run in p.runs: 
-                run.bold = True
-                run.font.size = Pt(10)
+            for run in p.runs: run.bold = True; run.font.size = Pt(10)
             if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         total_geral_contrib += subtotal_orgao_contrib
         total_geral_comp += subtotal_orgao_comp
 
-    # 3. TOTAL GERAL
     t_row = table.add_row().cells
     for cell in t_row: set_cell_background(cell, "EAEAEA")
-    
     t_row[0].text = "TOTAL GERAL"
     t_row[0].merge(t_row[3])
     t_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    
     t_row[4].text = _brl_fmt(total_geral_contrib)
     t_row[5].text = _brl_fmt(total_geral_comp)
     
@@ -341,9 +327,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         cell = t_row[idx]
         p = cell.paragraphs[0]
         if not p.runs: p.add_run(cell.text)
-        for run in p.runs: 
-            run.bold = True
-            run.font.size = Pt(10)
+        for run in p.runs: run.bold = True; run.font.size = Pt(10)
         if idx != 0: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
     return table
@@ -420,7 +404,6 @@ def render_header():
             st.session_state["authenticated"] = False
             st.rerun()
 
-# ── Views (Tabs) ──────────────────────────────────────────────────────────────
 def render_app():
     render_header()
     
@@ -428,13 +411,12 @@ def render_app():
     
     tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
     
-    # --- TAB 1: LANÇADOR (INTEGRADO NA NUVEM) ---
+    clientes_bd = carregar_clientes()
+    lancamentos_bd = carregar_lancamentos()
+    
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<h4 style='color:#1A365D; font-size:16px;'>Edição e Salvamento Rápido na Nuvem</h4>", unsafe_allow_html=True)
-        
-        clientes_bd = carregar_clientes()
-        lancamentos_bd = carregar_lancamentos()
         
         c1, c2 = st.columns(2)
         with c1: cliente_t1 = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t1")
@@ -467,7 +449,6 @@ def render_app():
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df_export.to_excel(writer, sheet_name="Valores", index=False)
             st.download_button("📥 Baixar Planilha (.xlsx)", data=output.getvalue(), file_name="Lançamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
-    # --- TAB 2: GERADOR ---
     with tab2:
         st.markdown("<br>", unsafe_allow_html=True)
         colL, colR = st.columns([1, 1], gap="large")
@@ -557,7 +538,6 @@ def render_app():
                     except Exception as e:
                         st.error(f"❌ Erro crítico: {e}")
 
-    # --- TAB 3: GESTÃO DE CLIENTES ---
     with tab3:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<div style='padding:20px; background:#FFFFFF; border-radius:12px; border:1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 15px rgba(0,0,0,0.03);'>", unsafe_allow_html=True)
@@ -578,7 +558,7 @@ def render_app():
                     st.error("Preencha todos os campos para cadastrar um novo cliente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Inicialização ─────────────────────────────────────────────────────────────
+# ── INÍCIO DA APLICAÇÃO ───────────────────────────────────────────────────────
 if __name__ == "__main__":
     if not st.session_state["authenticated"]:
         render_login()
