@@ -1,5 +1,5 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.3 - Light Mode Final)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.4 - Light Mode Final & Completo)
 =============================================================
 UI Glassmorphism Claro, DB JSON Duplo, Agrupamento Hierárquico Duplo,
 Correção do Session State, Tabelas Estilizadas em Degradê e E-mail.
@@ -30,8 +30,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# 🔴 BLINDAGEM DE ESTADO (Correção do Erro) 🔴
-# Garante que a segurança inicie antes de qualquer coisa carregar na tela
+# 🔴 BLINDAGEM DE ESTADO (Correção do Erro de Login) 🔴
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -128,6 +127,12 @@ CLIENTES_PADRAO: Dict[str, Dict[str, str]] = {
     "Município - Palmeirópolis": {"UF": "TO", "CNPJ": "00.007.401/0001-73"}
 }
 
+RESPONSAVEIS: Dict[str, str] = {
+    "Wênia Rodrigues": "1024", "Aline Moreno": "1021",
+    "Gustavo Nogueira": "1023", "Rafael Reis": "1022", "Samuel Almeida": "1020"
+}
+
+# ── Funções de Banco de Dados ─────────────────────────────────────────────────
 def carregar_clientes() -> dict:
     if os.path.exists(ARQUIVO_CLIENTES):
         try:
@@ -154,62 +159,19 @@ def salvar_lancamentos(cliente: str, competencia: str, dados: list):
     db[cliente][competencia] = dados
     with open(ARQUIVO_LANCAMENTOS, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False, indent=4)
 
-RESPONSAVEIS: Dict[str, str] = {
-    "Wênia Rodrigues": "1024", "Aline Moreno": "1021",
-    "Gustavo Nogueira": "1023", "Rafael Reis": "1022", "Samuel Almeida": "1020"
-}
-
-# ── CSS Premium (Modo Claro/Light Theme) ──────────────────────────────────────
-_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
-
-.stApp {
-    background: radial-gradient(circle at 15% 50%, rgba(45, 143, 212, 0.08), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #F8FAFC !important;
-}
-
-html, body, p, span, div, label, li { font-family: 'Inter', sans-serif !important; color: #2D3748; }
-h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; color: #1A365D !important; }
-
-@keyframes fadeSlideUp {
-    0% { opacity: 0; transform: translateY(20px); }
-    100% { opacity: 1; transform: translateY(0); }
-}
-.block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
-
-.stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
-    background: rgba(255, 255, 255, 0.8) !important; backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(0, 0, 0, 0.08) !important; border-radius: 12px !important; color: #2D3748 !important; transition: all 0.3s ease !important;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
-}
-.stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus, [data-baseweb="select"]>div:focus-within {
-    border-color: rgba(45, 143, 212, 0.5) !important; box-shadow: 0 0 15px rgba(45, 143, 212, 0.15) !important; background: #FFFFFF !important;
-}
-.stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {
-    color: #4A5568 !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
-}
-button[data-baseweb="tab"] { background: transparent !important; color: #718096 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
-button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }
-
-.stButton>button[kind="primary"] {
-    background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
-}
-.stButton>button[kind="primary"]:hover { transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }
-
-.stCheckbox>label { color: #2D3748 !important; font-size: 13px !important; cursor: pointer; }
-
-#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] { display: none !important; }
-</style>
-"""
-st.markdown(_CSS, unsafe_allow_html=True)
-
-# ── Engine do Word & PDF ──────────────────────────────────────────────────────
-def set_cell_background(cell, fill_color: str):
-    tcPr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear'); shd.set(qn('w:color'), 'auto'); shd.set(qn('w:fill'), fill_color)
-    tcPr.append(shd)
+# ── Funções Auxiliares ────────────────────────────────────────────────────────
+def get_datas_padrao() -> Tuple[str, str, str, datetime]:
+    hoje = datetime.now()
+    primeiro_dia = hoje.replace(day=1)
+    ultimo_dia_mes_ant = primeiro_dia - timedelta(days=1)
+    meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+    
+    comp_folha = f"{meses_pt[ultimo_dia_mes_ant.month - 1]}/{ultimo_dia_mes_ant.year}"
+    comp_email = f"{ultimo_dia_mes_ant.month:02d}/{ultimo_dia_mes_ant.year}"
+    
+    venc_dt = datetime(hoje.year, hoje.month, 20)
+    venc_str = venc_dt.strftime("%d/%m/%Y")
+    return comp_folha, venc_str, comp_email, venc_dt
 
 def safe_float(value: Any) -> float:
     if value is None: return 0.0
@@ -219,9 +181,31 @@ def safe_float(value: Any) -> float:
 def _brl_fmt(valor: Any) -> str:
     return f"R$ {safe_float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
+def read_excel_data(file_bytes: bytes) -> Optional[List[Dict[str, Any]]]:
+    try:
+        wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
+        sheet_name = next((name for name in wb.sheetnames if name.strip().lower().startswith("valores")), None)
+        if not sheet_name:
+            st.error('Aba "Valores" não encontrada na planilha Excel.')
+            return None
+        sheet = wb[sheet_name]
+        headers = [str(cell.value).strip() if cell.value is not None else "" for cell in sheet[1]]
+        return [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True) if not all(cell is None for cell in row)]
+    except Exception as e:
+        st.error(f"Erro ao ler Excel: {e}")
+        return None
+
+# ── Funções de Manipulação Word & PDF ─────────────────────────────────────────
+def set_cell_background(cell, fill_color: str):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear'); shd.set(qn('w:color'), 'auto'); shd.set(qn('w:fill'), fill_color)
+    tcPr.append(shd)
+
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
     
+    # --- CENÁRIO: SEM MOVIMENTO ---
     if not dados_nfs:
         table = doc.add_table(rows=2, cols=6)
         table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -233,6 +217,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         row_msg[0].merge(row_msg[5]); row_msg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         return table
         
+    # --- CENÁRIO: COM MOVIMENTO ---
     table = doc.add_table(rows=1, cols=6)
     table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
     for i, h in enumerate(headers):
@@ -356,7 +341,51 @@ def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
         except Exception: return None
     return None
 
-# ── UI Components ─────────────────────────────────────────────────────────────
+# ── CSS Premium (Modo Claro/Light Theme) ──────────────────────────────────────
+_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
+
+.stApp {
+    background: radial-gradient(circle at 15% 50%, rgba(45, 143, 212, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #F8FAFC !important;
+}
+
+html, body, p, span, div, label, li { font-family: 'Inter', sans-serif !important; color: #2D3748; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; color: #1A365D !important; }
+
+@keyframes fadeSlideUp {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+.block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
+
+.stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
+    background: rgba(255, 255, 255, 0.8) !important; backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important; border-radius: 12px !important; color: #2D3748 !important; transition: all 0.3s ease !important;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
+}
+.stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus, [data-baseweb="select"]>div:focus-within {
+    border-color: rgba(45, 143, 212, 0.5) !important; box-shadow: 0 0 15px rgba(45, 143, 212, 0.15) !important; background: #FFFFFF !important;
+}
+.stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {
+    color: #4A5568 !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
+}
+button[data-baseweb="tab"] { background: transparent !important; color: #718096 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
+button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }
+
+.stButton>button[kind="primary"] {
+    background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.stButton>button[kind="primary"]:hover { transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }
+
+.stCheckbox>label { color: #2D3748 !important; font-size: 13px !important; cursor: pointer; }
+#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] { display: none !important; }
+</style>
+"""
+st.markdown(_CSS, unsafe_allow_html=True)
+
+# ── Componentes Visuais ───────────────────────────────────────────────────────
 def _section(title: str, icon: str="", accent: str="#F29F05") -> None:
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:10px;padding:13px 18px 11px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.08);border-left:3px solid {accent};border-radius:10px;margin-bottom:15px;box-shadow:0 2px 10px rgba(0,0,0,0.02);">
@@ -558,7 +587,7 @@ def render_app():
                     st.error("Preencha todos os campos para cadastrar um novo cliente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ── INÍCIO DA APLICAÇÃO ───────────────────────────────────────────────────────
+# ── Inicialização ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     if not st.session_state["authenticated"]:
         render_login()
