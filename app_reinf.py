@@ -1,7 +1,7 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.0 - IA Vision Integrada)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.1 - IA Vision Resiliente)
 =============================================================
-UI Glassmorphism, IA Gemini para Leitura de PDFs/Fotos (OCR Inteligente),
+UI Glassmorphism, IA Gemini (Com Fallback Chain/Resiliência),
 DB JSON Duplo, Agrupamento Hierárquico, Temas Light/Dark e E-mail.
 """
 import streamlit as st
@@ -237,7 +237,7 @@ def injetar_css():
 
 injetar_css()
 
-# ── Cérebro de IA (Gemini Vision) ─────────────────────────────────────────────
+# ── Cérebro de IA (Gemini Vision com Falback Chain) ───────────────────────────
 def formatar_cnpj(cnpj_str: str) -> str:
     digits = re.sub(r'\D', '', str(cnpj_str))
     if len(digits) == 14:
@@ -245,14 +245,12 @@ def formatar_cnpj(cnpj_str: str) -> str:
     return cnpj_str
 
 def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, Any]]:
-    """Envia o PDF ou Imagem para o Gemini extrair os dados fiscais via Visão Computacional."""
+    """Envia o PDF/Imagem para a IA extrair os dados. Possui cadeia de resiliência contra atualizações do Google."""
     if not IA_DISPONIVEL:
         st.error("Biblioteca 'google-generativeai' não instalada no servidor. Atualize o requirements.txt.")
         return None
         
     genai.configure(api_key=api_key)
-    # Modelo otimizado para tarefas multimodais rápidas
-    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = """
     Você é um auditor fiscal sênior. Analise esta imagem ou PDF de Nota Fiscal de Serviço (NFS-e) ou Recibo.
@@ -267,27 +265,41 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
     """
     
     try:
-        # Salva temporariamente para a API do Google conseguir ler (exigência para PDFs)
+        # Salva o arquivo temporariamente
         ext = os.path.splitext(uploaded_file.name)[1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
             
-        # Faz o Upload para a nuvem segura do Google
         sample_file = genai.upload_file(path=tmp_path)
         
-        # Pede para a IA ler a imagem baseada no prompt
-        response = model.generate_content([prompt, sample_file])
+        # 🛡️ ARSENAL DE RESILIÊNCIA: Se um modelo estiver desativado na região, ele tenta o próximo.
+        modelos_para_testar = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-pro']
+        response = None
+        erro_google = ""
         
-        # Limpa os rastros de segurança
+        for nome_modelo in modelos_para_testar:
+            try:
+                model = genai.GenerativeModel(nome_modelo)
+                response = model.generate_content([prompt, sample_file])
+                break # A API respondeu com sucesso! Interrompe o loop.
+            except Exception as e:
+                erro_google = str(e)
+                continue # Falhou (ex: Erro 404). Tenta o próximo modelo instantaneamente.
+        
+        # Limpa os rastros do servidor do Google
         genai.delete_file(sample_file.name)
         os.remove(tmp_path)
         
-        # Trata a resposta (remove blocos ```json caso a IA mande)
+        # Se todos os modelos falharam
+        if not response:
+            st.error(f"O Google recusou as requisições em todos os modelos recentes. Detalhe técnico: {erro_google}")
+            return None
+        
+        # Trata o JSON devolvido pela IA
         txt_limpo = response.text.replace('```json', '').replace('```', '').strip()
         dados = json.loads(txt_limpo)
         
-        # Formata e padroniza para a Tabela
         dados["CNPJ Tomador"] = formatar_cnpj(dados.get("CNPJ Tomador", ""))
         dados["CNPJ Prestador"] = formatar_cnpj(dados.get("CNPJ Prestador", ""))
         dados["Total Contrib. Prev."] = safe_float(dados.get("Total Contrib. Prev.", 0.0))
@@ -295,10 +307,10 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
         
         return dados
     except json.JSONDecodeError:
-        st.error("A IA não conseguiu estruturar os dados perfeitamente. A imagem pode estar muito ilegível.")
+        st.error("A IA analisou a nota, mas não encontrou clareza suficiente para extrair os dados perfeitamente. Pode estar borrado.")
         return None
     except Exception as e:
-        st.error(f"Erro de processamento da IA: {e}")
+        st.error(f"Erro de processamento interno: {e}")
         return None
 
 # ── Funções Auxiliares ────────────────────────────────────────────────────────
@@ -312,6 +324,14 @@ def get_datas_padrao() -> Tuple[str, str, str, datetime]:
     venc_dt = datetime(hoje.year, hoje.month, 20)
     venc_str = venc_dt.strftime("%d/%m/%Y")
     return comp_folha, venc_str, comp_email, venc_dt
+
+def safe_float(value: Any) -> float:
+    if value is None: return 0.0
+    try: return float(str(value).replace(',', '.')) if isinstance(value, str) else float(value)
+    except (ValueError, TypeError): return 0.0
+
+def _brl_fmt(valor: Any) -> str:
+    return f"R$ {safe_float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ── Funções de Manipulação Word & PDF ─────────────────────────────────────────
 def set_cell_background(cell, fill_color: str):
@@ -451,13 +471,6 @@ def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
     return None
 
 # ── UI Components Principais ──────────────────────────────────────────────────
-def _section(title: str, icon: str="", accent: str="#F29F05") -> None:
-    st.markdown(f"""
-    <div class="section-card" style="border-left-color: {accent}">
-      <span style="font-size:15px">{icon}</span>
-      <span style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px">{title}</span>
-    </div>""", unsafe_allow_html=True)
-
 def render_login() -> None:
     _, col, _ = st.columns([1.4, 1, 1.4])
     with col:
@@ -511,11 +524,10 @@ def render_app():
     clientes_bd = carregar_clientes()
     lancamentos_bd = carregar_lancamentos()
     
-    # --- TAB 1: LANÇADOR (COM IA VISION) ---
+    # --- TAB 1: LANÇADOR (COM IA VISION RESILIENTE) ---
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # MÓDULO DE IA (GEMINI)
         with st.expander("🧠 Leitor de IA (PDFs e Imagens de Notas Fiscais)", expanded=False):
             st.markdown("<p style='font-size:12px; opacity:0.8;'>Arraste PDFs, JPGs ou PNGs de notas escaneadas/amassadas. A Inteligência Artificial Gemini irá ler a imagem e extrair os dados tributários para você.</p>", unsafe_allow_html=True)
             
@@ -543,8 +555,6 @@ def render_app():
                     if novos_dados:
                         st.session_state["ia_dados_importados"] = novos_dados
                         st.success(f"✅ {sucessos} notas lidas pela IA! Por favor, revise os dados na tabela abaixo.")
-                    else:
-                        st.error("A IA não conseguiu interpretar os arquivos.")
 
         st.markdown("<h4 style='font-size:16px; margin-top:20px; margin-bottom:20px;'>Tabela de Conferência e Salvamento na Nuvem</h4>", unsafe_allow_html=True)
         
@@ -555,7 +565,6 @@ def render_app():
         dados_atuais = lancamentos_bd.get(cliente_t1, {}).get(comp_t1, [])
         cols = ["Órgão", "CNPJ Tomador", "Nº NF", "CNPJ Prestador", "Total Contrib. Prev.", "Compensação"]
         
-        # Junta os dados salvos com os que a IA acabou de extrair
         dados_tabela = dados_atuais + st.session_state.get("ia_dados_importados", [])
         
         if dados_tabela:
@@ -576,8 +585,7 @@ def render_app():
                 dados_salvar = df_limpo.to_dict(orient="records")
                 salvar_lancamentos(cliente_t1, comp_t1, dados_salvar)
                 
-                st.session_state["ia_dados_importados"] = [] # Limpa cache da IA após salvar
-                
+                st.session_state["ia_dados_importados"] = [] 
                 st.toast(f"Lançamentos salvos para {cliente_t1}!", icon='☁️')
                 st.rerun()
                 
@@ -592,7 +600,7 @@ def render_app():
         colL, colR = st.columns([1, 1], gap="large")
         
         with colL:
-            _section("Configurações do Ato", "⚙️")
+            st.markdown(f"""<div class="section-card" style="border-left-color: #F29F05"><span style="font-size:15px">⚙️</span><span style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px">Configurações do Ato</span></div>""", unsafe_allow_html=True)
             cliente_sel = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t2")
             
             c_ato1, c_ato2 = st.columns([2, 1])
@@ -606,7 +614,7 @@ def render_app():
             tipo_darf = st.radio("Tipo de Documento", ["Reinf", "Avulso", "Sem DARF"], horizontal=True)
             
         with colR:
-            _section("Base de Dados", "📤", accent="#2a9c6b")
+            st.markdown(f"""<div class="section-card" style="border-left-color: #2a9c6b"><span style="font-size:15px">📤</span><span style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px">Base de Dados</span></div>""", unsafe_allow_html=True)
             houve_retencao = st.checkbox("✅ Houve retenções a declarar?", value=True)
             
             arq_excel = None
