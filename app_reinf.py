@@ -1,8 +1,8 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v9.0 - Light/Dark Toggle)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.0 - IA Vision Integrada)
 =============================================================
-UI Glassmorphism Dinâmica (Claro/Escuro), DB JSON Duplo, Agrupamento Hierárquico,
-Correção do Session State, Tabelas Estilizadas em Degradê e E-mail.
+UI Glassmorphism, IA Gemini para Leitura de PDFs/Fotos (OCR Inteligente),
+DB JSON Duplo, Agrupamento Hierárquico, Temas Light/Dark e E-mail.
 """
 import streamlit as st
 import io
@@ -10,6 +10,7 @@ import os
 import json
 import subprocess
 import tempfile
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
@@ -23,6 +24,13 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+# Importação da IA do Google
+try:
+    import google.generativeai as genai
+    IA_DISPONIVEL = True
+except ImportError:
+    IA_DISPONIVEL = False
+
 # ── Configuração da Página ────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ConPrev — EFD-Reinf",
@@ -34,7 +42,9 @@ st.set_page_config(
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "dark_mode" not in st.session_state:
-    st.session_state["dark_mode"] = False  # Começa no Modo Claro por padrão
+    st.session_state["dark_mode"] = False
+if "ia_dados_importados" not in st.session_state:
+    st.session_state["ia_dados_importados"] = []
 
 # ── Bancos de Dados Locais (JSON / NoSQL) ─────────────────────────────────────
 ARQUIVO_CLIENTES = "clientes.json"
@@ -165,7 +175,6 @@ def injetar_css():
     is_dark = st.session_state["dark_mode"]
     
     if is_dark:
-        # TEMA ESCURO
         bg_color = "#0B1E33"
         text_color = "#dce8f2"
         heading_color = "#fff"
@@ -175,7 +184,6 @@ def injetar_css():
         card_bg = "rgba(255,255,255,0.02)"
         shadow = "rgba(0,0,0,0.3)"
     else:
-        # TEMA CLARO
         bg_color = "#F8FAFC"
         text_color = "#2D3748"
         heading_color = "#1A365D"
@@ -188,18 +196,14 @@ def injetar_css():
     css = f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
-
     .stApp {{
         background: radial-gradient(circle at 15% 50%, rgba(45, 143, 212, 0.08), transparent 25%),
                     radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), {bg_color} !important;
     }}
-
     html, body, p, span, div, label, li {{ font-family: 'Inter', sans-serif !important; color: {text_color}; }}
     h1, h2, h3, h4, h5, h6 {{ font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; color: {heading_color} !important; }}
-
     @keyframes fadeSlideUp {{ 0% {{ opacity: 0; transform: translateY(20px); }} 100% {{ opacity: 1; transform: translateY(0); }} }}
     .block-container {{ animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; max-width: 1100px !important; }}
-
     .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {{
         background: {glass_bg} !important; backdrop-filter: blur(10px) !important;
         border: 1px solid {glass_border} !important; border-radius: 12px !important; color: {text_color} !important; transition: all 0.3s ease !important;
@@ -211,12 +215,8 @@ def injetar_css():
     .stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {{
         color: {label_color} !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
     }}
-    
-    /* Configuração das Tabs */
     button[data-baseweb="tab"] {{ background: transparent !important; color: {label_color} !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }}
     button[aria-selected="true"][data-baseweb="tab"] {{ color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }}
-
-    /* Cards e Sections */
     .custom-card {{
         background: {card_bg}; backdrop-filter: blur(20px); border: 1px solid {glass_border}; 
         padding: 40px; border-radius: 24px; text-align:center; margin-top: 10vh; box-shadow: 0 20px 40px {shadow};
@@ -225,20 +225,81 @@ def injetar_css():
         display:flex;align-items:center;gap:10px;padding:13px 18px 11px;background:{card_bg};
         border:1px solid {glass_border};border-left:3px solid #F29F05;border-radius:10px;margin-bottom:15px;box-shadow:0 2px 10px {shadow};
     }}
-
     .stButton>button[kind="primary"] {{
         background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }}
     .stButton>button[kind="primary"]:hover {{ transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }}
-
     .stCheckbox>label {{ color: {text_color} !important; font-size: 13px !important; cursor: pointer; }}
     #MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] {{ display: none !important; }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
 
-# Injeta o CSS correspondente ao tema logo na renderização
 injetar_css()
+
+# ── Cérebro de IA (Gemini Vision) ─────────────────────────────────────────────
+def formatar_cnpj(cnpj_str: str) -> str:
+    digits = re.sub(r'\D', '', str(cnpj_str))
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return cnpj_str
+
+def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, Any]]:
+    """Envia o PDF ou Imagem para o Gemini extrair os dados fiscais via Visão Computacional."""
+    if not IA_DISPONIVEL:
+        st.error("Biblioteca 'google-generativeai' não instalada no servidor. Atualize o requirements.txt.")
+        return None
+        
+    genai.configure(api_key=api_key)
+    # Modelo otimizado para tarefas multimodais rápidas
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = """
+    Você é um auditor fiscal sênior. Analise esta imagem ou PDF de Nota Fiscal de Serviço (NFS-e) ou Recibo.
+    Extraia os seguintes dados tributários e me devolva ESTRITAMENTE um objeto JSON válido, sem NENHUM texto adicional ou formatação markdown, com as chaves exatas abaixo:
+    {
+        "Órgão": "Razão Social ou Nome do TOMADOR do serviço",
+        "CNPJ Tomador": "Apenas os números do CNPJ do tomador",
+        "Nº NF": "Número da Nota",
+        "CNPJ Prestador": "Apenas os números do CNPJ do prestador",
+        "Total Contrib. Prev.": 0.0 (Valor numérico float do INSS Retido. Se não houver INSS retido, retorne 0.0)
+    }
+    """
+    
+    try:
+        # Salva temporariamente para a API do Google conseguir ler (exigência para PDFs)
+        ext = os.path.splitext(uploaded_file.name)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
+            
+        # Faz o Upload para a nuvem segura do Google
+        sample_file = genai.upload_file(path=tmp_path)
+        
+        # Pede para a IA ler a imagem baseada no prompt
+        response = model.generate_content([prompt, sample_file])
+        
+        # Limpa os rastros de segurança
+        genai.delete_file(sample_file.name)
+        os.remove(tmp_path)
+        
+        # Trata a resposta (remove blocos ```json caso a IA mande)
+        txt_limpo = response.text.replace('```json', '').replace('```', '').strip()
+        dados = json.loads(txt_limpo)
+        
+        # Formata e padroniza para a Tabela
+        dados["CNPJ Tomador"] = formatar_cnpj(dados.get("CNPJ Tomador", ""))
+        dados["CNPJ Prestador"] = formatar_cnpj(dados.get("CNPJ Prestador", ""))
+        dados["Total Contrib. Prev."] = safe_float(dados.get("Total Contrib. Prev.", 0.0))
+        dados["Compensação"] = 0.0
+        
+        return dados
+    except json.JSONDecodeError:
+        st.error("A IA não conseguiu estruturar os dados perfeitamente. A imagem pode estar muito ilegível.")
+        return None
+    except Exception as e:
+        st.error(f"Erro de processamento da IA: {e}")
+        return None
 
 # ── Funções Auxiliares ────────────────────────────────────────────────────────
 def get_datas_padrao() -> Tuple[str, str, str, datetime]:
@@ -246,35 +307,11 @@ def get_datas_padrao() -> Tuple[str, str, str, datetime]:
     primeiro_dia = hoje.replace(day=1)
     ultimo_dia_mes_ant = primeiro_dia - timedelta(days=1)
     meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-    
     comp_folha = f"{meses_pt[ultimo_dia_mes_ant.month - 1]}/{ultimo_dia_mes_ant.year}"
     comp_email = f"{ultimo_dia_mes_ant.month:02d}/{ultimo_dia_mes_ant.year}"
-    
     venc_dt = datetime(hoje.year, hoje.month, 20)
     venc_str = venc_dt.strftime("%d/%m/%Y")
     return comp_folha, venc_str, comp_email, venc_dt
-
-def safe_float(value: Any) -> float:
-    if value is None: return 0.0
-    try: return float(str(value).replace(',', '.')) if isinstance(value, str) else float(value)
-    except (ValueError, TypeError): return 0.0
-
-def _brl_fmt(valor: Any) -> str:
-    return f"R$ {safe_float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-
-def read_excel_data(file_bytes: bytes) -> Optional[List[Dict[str, Any]]]:
-    try:
-        wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
-        sheet_name = next((name for name in wb.sheetnames if name.strip().lower().startswith("valores")), None)
-        if not sheet_name:
-            st.error('Aba "Valores" não encontrada na planilha Excel.')
-            return None
-        sheet = wb[sheet_name]
-        headers = [str(cell.value).strip() if cell.value is not None else "" for cell in sheet[1]]
-        return [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True) if not all(cell is None for cell in row)]
-    except Exception as e:
-        st.error(f"Erro ao ler Excel: {e}")
-        return None
 
 # ── Funções de Manipulação Word & PDF ─────────────────────────────────────────
 def set_cell_background(cell, fill_color: str):
@@ -346,7 +383,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             st_prest_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
             st_prest_row[4].text = _brl_fmt(subtotal_prest_contrib)
             st_prest_row[5].text = _brl_fmt(subtotal_prest_comp)
-            
             for idx in [0, 4, 5]:
                 cell = st_prest_row[idx]
                 p = cell.paragraphs[0]
@@ -364,7 +400,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         st_orgao_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         st_orgao_row[4].text = _brl_fmt(subtotal_orgao_contrib)
         st_orgao_row[5].text = _brl_fmt(subtotal_orgao_comp)
-        
         for idx in [0, 4, 5]:
             cell = st_orgao_row[idx]
             p = cell.paragraphs[0]
@@ -382,7 +417,6 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     t_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
     t_row[4].text = _brl_fmt(total_geral_contrib)
     t_row[5].text = _brl_fmt(total_geral_comp)
-    
     for idx in [0, 4, 5]:
         cell = t_row[idx]
         p = cell.paragraphs[0]
@@ -416,7 +450,7 @@ def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
         except Exception: return None
     return None
 
-# ── UI Components ─────────────────────────────────────────────────────────────
+# ── UI Components Principais ──────────────────────────────────────────────────
 def _section(title: str, icon: str="", accent: str="#F29F05") -> None:
     st.markdown(f"""
     <div class="section-card" style="border-left-color: {accent}">
@@ -427,10 +461,7 @@ def _section(title: str, icon: str="", accent: str="#F29F05") -> None:
 def render_login() -> None:
     _, col, _ = st.columns([1.4, 1, 1.4])
     with col:
-        
-        # Oculta o toggle da tela de login por design
         st.markdown("""<style> [data-testid="stSidebar"] {display: none;} </style>""", unsafe_allow_html=True)
-
         st.markdown("""
         <div class="custom-card">
           <div style="width:70px;height:70px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:20px;display:inline-flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 30px rgba(242,159,5,.4);margin-bottom:20px">🌌</div>
@@ -464,7 +495,6 @@ def render_header():
           </div>
         </div>""", unsafe_allow_html=True)
     with mid:
-        # Toggle para trocar o tema
         st.markdown("<br>", unsafe_allow_html=True)
         st.session_state["dark_mode"] = st.toggle("🌙 Modo Escuro", value=st.session_state["dark_mode"])
     with right:
@@ -475,28 +505,64 @@ def render_header():
 
 def render_app():
     render_header()
-    
     comp_folha, venc_str_padrao, comp_email, venc_dt_padrao = get_datas_padrao()
-    
-    tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
+    tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem/IA)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
     
     clientes_bd = carregar_clientes()
     lancamentos_bd = carregar_lancamentos()
     
+    # --- TAB 1: LANÇADOR (COM IA VISION) ---
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<h4 style='font-size:16px; margin-bottom: 20px;'>Edição e Salvamento Rápido na Nuvem</h4>", unsafe_allow_html=True)
+        
+        # MÓDULO DE IA (GEMINI)
+        with st.expander("🧠 Leitor de IA (PDFs e Imagens de Notas Fiscais)", expanded=False):
+            st.markdown("<p style='font-size:12px; opacity:0.8;'>Arraste PDFs, JPGs ou PNGs de notas escaneadas/amassadas. A Inteligência Artificial Gemini irá ler a imagem e extrair os dados tributários para você.</p>", unsafe_allow_html=True)
+            
+            chave_gemini = st.secrets.get("GEMINI_API_KEY", None)
+            
+            if not chave_gemini:
+                st.warning("⚠️ Chave da API do Gemini (GEMINI_API_KEY) não configurada nos Secrets. Configure para liberar o leitor.")
+            else:
+                arquivos_ia = st.file_uploader("Arraste fotos ou PDFs aqui", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+                
+                if st.button("✨ Processar Documentos com Inteligência Artificial") and arquivos_ia:
+                    novos_dados = []
+                    sucessos = 0
+                    
+                    barra_progresso = st.progress(0)
+                    for i, arq in enumerate(arquivos_ia):
+                        st.toast(f"Analisando: {arq.name}...", icon='👁️')
+                        dado_extraido = extrair_dados_ia_gemini(arq, chave_gemini)
+                        
+                        if dado_extraido:
+                            novos_dados.append(dado_extraido)
+                            sucessos += 1
+                        barra_progresso.progress((i + 1) / len(arquivos_ia))
+                        
+                    if novos_dados:
+                        st.session_state["ia_dados_importados"] = novos_dados
+                        st.success(f"✅ {sucessos} notas lidas pela IA! Por favor, revise os dados na tabela abaixo.")
+                    else:
+                        st.error("A IA não conseguiu interpretar os arquivos.")
+
+        st.markdown("<h4 style='font-size:16px; margin-top:20px; margin-bottom:20px;'>Tabela de Conferência e Salvamento na Nuvem</h4>", unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
-        with c1: cliente_t1 = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t1")
-        with c2: comp_t1 = st.text_input("Competência (Para vincular os dados)", value=comp_folha, key="comp_t1")
+        with c1: cliente_t1 = st.selectbox("Selecione o Cliente (Para Salvar na Nuvem)", list(clientes_bd.keys()), key="cli_t1")
+        with c2: comp_t1 = st.text_input("Competência", value=comp_folha, key="comp_t1")
         
         dados_atuais = lancamentos_bd.get(cliente_t1, {}).get(comp_t1, [])
         cols = ["Órgão", "CNPJ Tomador", "Nº NF", "CNPJ Prestador", "Total Contrib. Prev.", "Compensação"]
         
-        if dados_atuais:
-            df_base = pd.DataFrame(dados_atuais)
-            st.info(f"📂 Encontrados {len(dados_atuais)} lançamentos salvos no servidor para esta competência.")
+        # Junta os dados salvos com os que a IA acabou de extrair
+        dados_tabela = dados_atuais + st.session_state.get("ia_dados_importados", [])
+        
+        if dados_tabela:
+            df_base = pd.DataFrame(dados_tabela)
+            for c in cols:
+                if c not in df_base.columns: df_base[c] = None
+            df_base = df_base[cols]
         else:
             df_base = pd.DataFrame(columns=cols)
             for _ in range(5): df_base.loc[len(df_base)] = [None]*6
@@ -509,6 +575,9 @@ def render_app():
                 df_limpo = df_editado.dropna(how="all").where(pd.notnull(df_editado), None)
                 dados_salvar = df_limpo.to_dict(orient="records")
                 salvar_lancamentos(cliente_t1, comp_t1, dados_salvar)
+                
+                st.session_state["ia_dados_importados"] = [] # Limpa cache da IA após salvar
+                
                 st.toast(f"Lançamentos salvos para {cliente_t1}!", icon='☁️')
                 st.rerun()
                 
@@ -516,7 +585,7 @@ def render_app():
             df_export = df_editado.dropna(how="all")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df_export.to_excel(writer, sheet_name="Valores", index=False)
-            st.download_button("📥 Baixar Planilha (.xlsx)", data=output.getvalue(), file_name="Lançamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            st.download_button("📥 Baixar Planilha Manual (.xlsx)", data=output.getvalue(), file_name="Lançamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
     with tab2:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -545,14 +614,14 @@ def render_app():
             can_run = True
             
             if houve_retencao:
-                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos)", "📂 Upload de Planilha (.xlsx)"], horizontal=True)
+                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos da IA/Manual)", "📂 Upload Antigo (.xlsx)"], horizontal=True)
                 
                 if "Nuvem" in fonte_dados:
                     dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
                     if dados_nfs:
                         st.success(f"✅ {len(dados_nfs)} notas carregadas automaticamente do servidor.")
                     else:
-                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem. Vá na aba 'Lançador' para salvar ou mude para Upload.")
+                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem. Vá na aba 'Lançador' para usar a IA ou mude para Upload.")
                         can_run = False
                 else:
                     arq_excel = st.file_uploader("Upload da Planilha Excel (.xlsx)", type=["xlsx"])
