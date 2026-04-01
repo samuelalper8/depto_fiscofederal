@@ -1,7 +1,7 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.1)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v8.2 - Light Mode)
 =============================================================
-UI Glassmorphism, DB JSON Duplo, Agrupamento Hierárquico Duplo
+UI Glassmorphism Claro, DB JSON Duplo, Agrupamento Hierárquico Duplo
 (Por Órgão e por CNPJ Prestador), Tabelas Estilizadas em Degradê e E-mail.
 """
 import streamlit as st
@@ -154,18 +154,19 @@ RESPONSAVEIS: Dict[str, str] = {
     "Gustavo Nogueira": "1023", "Rafael Reis": "1022", "Samuel Almeida": "1020"
 }
 
-# ── CSS Premium ───────────────────────────────────────────────────────────────
+# ── CSS Premium (Modo Claro/Light Theme) ──────────────────────────────────────
 _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
 
+/* Fundo Modo Claro com Iluminação Suave */
 .stApp {
-    background: radial-gradient(circle at 15% 50%, rgba(26, 111, 175, 0.1), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #0B1E33 !important;
+    background: radial-gradient(circle at 15% 50%, rgba(45, 143, 212, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(242, 159, 5, 0.08), transparent 25%), #F8FAFC !important;
 }
 
-html, body, p, span, div, label, li { font-family: 'Inter', sans-serif !important; color: #dce8f2; }
-h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; }
+html, body, p, span, div, label, li { font-family: 'Inter', sans-serif !important; color: #2D3748; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.5px; color: #1A365D !important; }
 
 @keyframes fadeSlideUp {
     0% { opacity: 0; transform: translateY(20px); }
@@ -173,23 +174,27 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Space Grotesk', sans-serif !important; le
 }
 .block-container { animation: fadeSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; padding-top: 2rem !important; }
 
+/* Componentes Glassmorphism Claro */
 .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {
-    background: rgba(255, 255, 255, 0.03) !important; backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 12px !important; color: #fff !important; transition: all 0.3s ease !important;
+    background: rgba(255, 255, 255, 0.8) !important; backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important; border-radius: 12px !important; color: #2D3748 !important; transition: all 0.3s ease !important;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
 }
 .stTextInput>div>div>input:focus, .stDateInput>div>div>input:focus, [data-baseweb="select"]>div:focus-within {
-    border-color: rgba(45, 143, 212, 0.5) !important; box-shadow: 0 0 20px rgba(45, 143, 212, 0.2) !important; background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(45, 143, 212, 0.5) !important; box-shadow: 0 0 15px rgba(45, 143, 212, 0.15) !important; background: #FFFFFF !important;
 }
 .stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {
-    color: #7a95ad !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
+    color: #4A5568 !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
 }
-button[data-baseweb="tab"] { background: transparent !important; color: #7a95ad !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
+button[data-baseweb="tab"] { background: transparent !important; color: #718096 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }
 button[aria-selected="true"][data-baseweb="tab"] { color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }
 
 .stButton>button[kind="primary"] {
-    background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #0B1E33 !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.2) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 .stButton>button[kind="primary"]:hover { transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }
+
+.stCheckbox>label { color: #2D3748 !important; font-size: 13px !important; cursor: pointer; }
 
 #MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] { display: none !important; }
 </style>
@@ -275,7 +280,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         for run in p.runs: run.font.size = Pt(10)
             
-            # 1. Subtotal por Prestador (Fundo Quase Branco)
+            # 1. Subtotal por Prestador
             st_prest_row = table.add_row().cells
             for cell in st_prest_row: set_cell_background(cell, "FDFDFD")
             
@@ -298,7 +303,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             subtotal_orgao_contrib += subtotal_prest_contrib
             subtotal_orgao_comp += subtotal_prest_comp
 
-        # 2. Subtotal por Órgão (Fundo Cinza Suave)
+        # 2. Subtotal por Órgão
         st_orgao_row = table.add_row().cells
         for cell in st_orgao_row: set_cell_background(cell, "F2F2F2")
         
@@ -321,7 +326,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         total_geral_contrib += subtotal_orgao_contrib
         total_geral_comp += subtotal_orgao_comp
 
-    # 3. TOTAL GERAL (Fundo Cinza Destaque)
+    # 3. TOTAL GERAL
     t_row = table.add_row().cells
     for cell in t_row: set_cell_background(cell, "EAEAEA")
     
@@ -367,44 +372,69 @@ def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
         except Exception: return None
     return None
 
-# ── App Principal ─────────────────────────────────────────────────────────────
-if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
+# ── UI Components ─────────────────────────────────────────────────────────────
+def _section(title: str, icon: str="", accent: str="#F29F05") -> None:
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;padding:13px 18px 11px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.08);border-left:3px solid {accent};border-radius:10px;margin-bottom:15px;box-shadow:0 2px 10px rgba(0,0,0,0.02);">
+      <span style="font-size:15px">{icon}</span>
+      <span style="font-size:11.5px;font-weight:700;color:#2D3748;text-transform:uppercase;letter-spacing:1.2px">{title}</span>
+    </div>""", unsafe_allow_html=True)
 
-if not st.session_state["authenticated"]:
+def render_login() -> None:
     _, col, _ = st.columns([1.4, 1, 1.4])
     with col:
         st.markdown("""
-        <div style="background: rgba(255,255,255,0.02); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); padding: 40px; border-radius: 24px; text-align:center; margin-top: 10vh; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+        <div style="background: rgba(255,255,255,0.8); backdrop-filter: blur(20px); border: 1px solid rgba(0,0,0,0.08); padding: 40px; border-radius: 24px; text-align:center; margin-top: 10vh; box-shadow: 0 20px 40px rgba(0,0,0,0.05);">
           <div style="width:70px;height:70px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:20px;display:inline-flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 30px rgba(242,159,5,.4);margin-bottom:20px">🌌</div>
-          <h2 style="font-size:28px;font-weight:800;color:#fff;margin:0 0 8px; font-family:'Space Grotesk', sans-serif;">ConPrev</h2>
-          <p style="font-size:12px;color:#7a95ad;letter-spacing:2px;text-transform:uppercase;margin:0 0 30px 0;">EFD-Reinf &middot; Sistema de Retenções</p>
+          <h2 style="font-size:28px;font-weight:800;color:#1A365D;margin:0 0 8px; font-family:'Space Grotesk', sans-serif;">ConPrev</h2>
+          <p style="font-size:12px;color:#718096;letter-spacing:2px;text-transform:uppercase;margin:0 0 30px 0;">EFD-Reinf &middot; Sistema de Retenções</p>
         </div>""", unsafe_allow_html=True)
+        
         pwd = st.text_input("Credencial de Acesso", type="password", placeholder="••••••••", label_visibility="collapsed")
+        
         if st.button("Acessar Plataforma", type="primary", use_container_width=True):
-            if pwd == st.secrets.get("APP_PASSWORD", "conprev2026"):
-                st.session_state["authenticated"] = True; st.rerun()
-            else: st.error("Credencial inválida.")
-else:
-    clientes_bd = carregar_clientes()
-    lancamentos_bd = carregar_lancamentos()
+            senha_oficial = st.secrets.get("APP_PASSWORD", None)
+            if not senha_oficial:
+                st.error("⚠️ Infraestrutura: A variável 'APP_PASSWORD' não foi configurada nos Secrets.")
+                return
+
+            if pwd == senha_oficial:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("⚠️ Senha incorreta. Acesso negado.")
+
+def render_header():
+    left, right = st.columns([5,1])
+    with left:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:14px;padding:6px 0 16px">
+          <div style="width:42px;height:42px;flex-shrink:0;background:linear-gradient(145deg,#F29F05,#d78904);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 14px rgba(242,159,5,.4)">📄</div>
+          <div>
+            <div style="font-size:22px;font-weight:800;color:#1A365D;line-height:1.2;font-family:'Space Grotesk', sans-serif;">Folha de Rosto <span style="font-weight:400;color:#718096;font-size:18px;margin-left:6px">EFD-Reinf</span></div>
+            <div style="font-size:11px;color:#718096;margin-top:2px">Automação de Documentos &nbsp;·&nbsp; Fisco Federal</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+    with right:
+        if st.button("↩ Sair", key="logout_btn"):
+            st.session_state["authenticated"] = False
+            st.rerun()
+
+# ── Views (Tabs) ──────────────────────────────────────────────────────────────
+def render_app():
+    render_header()
     
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:16px;padding:10px 0 20px;">
-      <div style="width:48px;height:48px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 20px rgba(242,159,5,.4)">📄</div>
-      <div>
-        <div style="font-size:22px;font-weight:800;color:#fff;font-family:'Space Grotesk', sans-serif;">Folha de Rosto <span style="font-weight:400;color:#7a95ad;">EFD-Reinf</span></div>
-      </div>
-    </div>""", unsafe_allow_html=True)
+    comp_folha, venc_str_padrao, comp_email, venc_dt_padrao = get_datas_padrao()
     
     tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
-    
-    hoje = datetime.now()
-    comp_folha = f"{(hoje.replace(day=1) - timedelta(days=1)).month:02d}/{(hoje.replace(day=1) - timedelta(days=1)).year}"
     
     # --- TAB 1: LANÇADOR (INTEGRADO NA NUVEM) ---
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<h4 style='color:#fff; font-size:16px;'>Edição e Salvamento Rápido na Nuvem</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#1A365D; font-size:16px;'>Edição e Salvamento Rápido na Nuvem</h4>", unsafe_allow_html=True)
+        
+        clientes_bd = carregar_clientes()
+        lancamentos_bd = carregar_lancamentos()
         
         c1, c2 = st.columns(2)
         with c1: cliente_t1 = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t1")
@@ -443,7 +473,7 @@ else:
         colL, colR = st.columns([1, 1], gap="large")
         
         with colL:
-            st.markdown("<h4 style='color:#fff; font-size:16px;'>1. Configurações do Ato</h4>", unsafe_allow_html=True)
+            _section("Configurações do Ato", "⚙️")
             cliente_sel = st.selectbox("Selecione o Cliente", list(clientes_bd.keys()), key="cli_t2")
             
             c_ato1, c_ato2 = st.columns([2, 1])
@@ -457,7 +487,7 @@ else:
             tipo_darf = st.radio("Tipo de Documento", ["Reinf", "Avulso", "Sem DARF"], horizontal=True)
             
         with colR:
-            st.markdown("<h4 style='color:#fff; font-size:16px;'>2. Base de Dados</h4>", unsafe_allow_html=True)
+            _section("Base de Dados", "📤", accent="#2a9c6b")
             houve_retencao = st.checkbox("✅ Houve retenções a declarar?", value=True)
             
             arq_excel = None
@@ -465,7 +495,7 @@ else:
             can_run = True
             
             if houve_retencao:
-                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos no Sistema)", "📂 Upload de Planilha (.xlsx)"], horizontal=True)
+                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos)", "📂 Upload de Planilha (.xlsx)"], horizontal=True)
                 
                 if "Nuvem" in fonte_dados:
                     dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
@@ -530,8 +560,8 @@ else:
     # --- TAB 3: GESTÃO DE CLIENTES ---
     with tab3:
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<div style='padding:20px; background:rgba(255,255,255,0.02); border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
-        st.markdown("<h4 style='color:#fff; font-size:18px; margin-bottom:15px;'>🏢 Cadastrar Novo Cliente no Sistema</h4>", unsafe_allow_html=True)
+        st.markdown("<div style='padding:20px; background:#FFFFFF; border-radius:12px; border:1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 15px rgba(0,0,0,0.03);'>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#1A365D; font-size:18px; margin-bottom:15px;'>🏢 Cadastrar Novo Cliente no Sistema</h4>", unsafe_allow_html=True)
         
         with st.form("form_novo_cliente", clear_on_submit=True):
             cc1, cc2, cc3 = st.columns([2, 1, 1])
@@ -547,3 +577,10 @@ else:
                 else:
                     st.error("Preencha todos os campos para cadastrar um novo cliente.")
         st.markdown("</div>", unsafe_allow_html=True)
+
+# ── Inicialização ─────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    if not st.session_state["authenticated"]:
+        render_login()
+    else:
+        render_app()
