@@ -1,8 +1,8 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.1 - IA Vision Resiliente)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.3 - Master Version)
 =============================================================
-UI Glassmorphism, IA Gemini (Com Fallback Chain/Resiliência),
-DB JSON Duplo, Agrupamento Hierárquico, Temas Light/Dark e E-mail.
+Código Completo: IA Gemini (Otimizada), Lógica de Salvamento (Adicionar/Sobrepor),
+Ocultação de Index, Agrupamento Hierárquico no Word, PDFs e CSS Glassmorphism.
 """
 import streamlit as st
 import io
@@ -164,10 +164,15 @@ def carregar_lancamentos() -> dict:
         except: pass
     return {}
 
-def salvar_lancamentos(cliente: str, competencia: str, dados: list):
+def salvar_lancamentos(cliente: str, competencia: str, dados: list, modo: str = "sobrepor"):
     db = carregar_lancamentos()
     if cliente not in db: db[cliente] = {}
-    db[cliente][competencia] = dados
+    
+    if modo == "adicionar" and competencia in db[cliente]:
+        db[cliente][competencia].extend(dados)
+    else:
+        db[cliente][competencia] = dados
+        
     with open(ARQUIVO_LANCAMENTOS, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False, indent=4)
 
 # ── Engine de Temas CSS Dinâmico ──────────────────────────────────────────────
@@ -215,18 +220,18 @@ def injetar_css():
     .stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {{
         color: {label_color} !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 1px;
     }}
-    button[data-baseweb="tab"] {{ background: transparent !important; color: {label_color} !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; }}
+    button[data-baseweb="tab"] {{ background: transparent !important; color: {label_color} !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; outline: none !important; box-shadow: none !important; }}
     button[aria-selected="true"][data-baseweb="tab"] {{ color: #F29F05 !important; border-bottom: 2px solid #F29F05 !important; }}
     .custom-card {{
         background: {card_bg}; backdrop-filter: blur(20px); border: 1px solid {glass_border}; 
-        padding: 40px; border-radius: 24px; text-align:center; margin-top: 10vh; box-shadow: 0 20px 40px {shadow};
+        padding: 30px; border-radius: 16px; text-align:center; box-shadow: 0 10px 30px {shadow};
     }}
     .section-card {{
         display:flex;align-items:center;gap:10px;padding:13px 18px 11px;background:{card_bg};
         border:1px solid {glass_border};border-left:3px solid #F29F05;border-radius:10px;margin-bottom:15px;box-shadow:0 2px 10px {shadow};
     }}
     .stButton>button[kind="primary"] {{
-        background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 12px !important; padding: 12px 28px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        background: linear-gradient(135deg, #F29F05, #d78904) !important; color: #FFFFFF !important; font-weight: 700 !important; font-family: 'Space Grotesk', sans-serif !important; border: none !important; border-radius: 10px !important; padding: 10px 24px !important; box-shadow: 0 4px 15px rgba(242, 159, 5, 0.3) !important; transition: all 0.3s ease !important;
     }}
     .stButton>button[kind="primary"]:hover {{ transform: translateY(-2px) scale(1.02) !important; box-shadow: 0 8px 25px rgba(242, 159, 5, 0.4) !important; }}
     .stCheckbox>label {{ color: {text_color} !important; font-size: 13px !important; cursor: pointer; }}
@@ -237,7 +242,7 @@ def injetar_css():
 
 injetar_css()
 
-# ── Cérebro de IA (Gemini Vision com Falback Chain) ───────────────────────────
+# ── Cérebro de IA (Gemini Vision) ─────────────────────────────────────────────
 def formatar_cnpj(cnpj_str: str) -> str:
     digits = re.sub(r'\D', '', str(cnpj_str))
     if len(digits) == 14:
@@ -245,27 +250,26 @@ def formatar_cnpj(cnpj_str: str) -> str:
     return cnpj_str
 
 def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, Any]]:
-    """Envia o PDF/Imagem para a IA extrair os dados. Possui cadeia de resiliência contra atualizações do Google."""
     if not IA_DISPONIVEL:
-        st.error("Biblioteca 'google-generativeai' não instalada no servidor. Atualize o requirements.txt.")
+        st.error("Biblioteca 'google-generativeai' não instalada no servidor.")
         return None
         
     genai.configure(api_key=api_key)
     
     prompt = """
-    Você é um auditor fiscal sênior. Analise esta imagem ou PDF de Nota Fiscal de Serviço (NFS-e) ou Recibo.
-    Extraia os seguintes dados tributários e me devolva ESTRITAMENTE um objeto JSON válido, sem NENHUM texto adicional ou formatação markdown, com as chaves exatas abaixo:
+    Analise esta imagem ou PDF de Nota Fiscal de Serviço (NFS-e).
+    Extraia os seguintes dados tributários e me devolva ESTRITAMENTE um objeto JSON válido, sem NENHUM texto adicional ou markdown, com as chaves exatas abaixo:
     {
-        "Órgão": "Razão Social ou Nome do TOMADOR do serviço",
+        "Órgão": "Nome do TOMADOR do serviço",
         "CNPJ Tomador": "Apenas os números do CNPJ do tomador",
         "Nº NF": "Número da Nota",
         "CNPJ Prestador": "Apenas os números do CNPJ do prestador",
-        "Total Contrib. Prev.": 0.0 (Valor numérico float do INSS Retido. Se não houver INSS retido, retorne 0.0)
+        "Total Contrib. Prev.": 0.0
     }
+    Se não houver INSS retido, retorne 0.0 no Total Contrib. Prev.
     """
     
     try:
-        # Salva o arquivo temporariamente
         ext = os.path.splitext(uploaded_file.name)[1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(uploaded_file.getvalue())
@@ -273,44 +277,30 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
             
         sample_file = genai.upload_file(path=tmp_path)
         
-        # 🛡️ ARSENAL DE RESILIÊNCIA: Se um modelo estiver desativado na região, ele tenta o próximo.
-        modelos_para_testar = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-pro']
-        response = None
-        erro_google = ""
+        # Uso do modelo mais otimizado e resiliente para a cota gratuita
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content([prompt, sample_file])
         
-        for nome_modelo in modelos_para_testar:
-            try:
-                model = genai.GenerativeModel(nome_modelo)
-                response = model.generate_content([prompt, sample_file])
-                break # A API respondeu com sucesso! Interrompe o loop.
-            except Exception as e:
-                erro_google = str(e)
-                continue # Falhou (ex: Erro 404). Tenta o próximo modelo instantaneamente.
-        
-        # Limpa os rastros do servidor do Google
         genai.delete_file(sample_file.name)
         os.remove(tmp_path)
         
-        # Se todos os modelos falharam
-        if not response:
-            st.error(f"O Google recusou as requisições em todos os modelos recentes. Detalhe técnico: {erro_google}")
-            return None
-        
-        # Trata o JSON devolvido pela IA
         txt_limpo = response.text.replace('```json', '').replace('```', '').strip()
         dados = json.loads(txt_limpo)
         
         dados["CNPJ Tomador"] = formatar_cnpj(dados.get("CNPJ Tomador", ""))
         dados["CNPJ Prestador"] = formatar_cnpj(dados.get("CNPJ Prestador", ""))
-        dados["Total Contrib. Prev."] = safe_float(dados.get("Total Contrib. Prev.", 0.0))
+        dados["Total Contrib. Prev."] = float(str(dados.get("Total Contrib. Prev.", 0.0)).replace(',', '.'))
         dados["Compensação"] = 0.0
         
         return dados
     except json.JSONDecodeError:
-        st.error("A IA analisou a nota, mas não encontrou clareza suficiente para extrair os dados perfeitamente. Pode estar borrado.")
+        st.error("A IA não conseguiu estruturar os dados. A imagem pode estar ilegível.")
         return None
     except Exception as e:
-        st.error(f"Erro de processamento interno: {e}")
+        if "429" in str(e):
+            st.error("⚠️ Limite de requisições gratuitas do Google excedido. Aguarde cerca de 1 minuto para tentar novamente.")
+        else:
+            st.error(f"Erro de processamento da IA: {e}")
         return None
 
 # ── Funções Auxiliares ────────────────────────────────────────────────────────
@@ -403,6 +393,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             st_prest_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
             st_prest_row[4].text = _brl_fmt(subtotal_prest_contrib)
             st_prest_row[5].text = _brl_fmt(subtotal_prest_comp)
+            
             for idx in [0, 4, 5]:
                 cell = st_prest_row[idx]
                 p = cell.paragraphs[0]
@@ -420,6 +411,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         st_orgao_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         st_orgao_row[4].text = _brl_fmt(subtotal_orgao_contrib)
         st_orgao_row[5].text = _brl_fmt(subtotal_orgao_comp)
+        
         for idx in [0, 4, 5]:
             cell = st_orgao_row[idx]
             p = cell.paragraphs[0]
@@ -437,6 +429,7 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
     t_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
     t_row[4].text = _brl_fmt(total_geral_contrib)
     t_row[5].text = _brl_fmt(total_geral_comp)
+    
     for idx in [0, 4, 5]:
         cell = t_row[idx]
         p = cell.paragraphs[0]
@@ -476,7 +469,7 @@ def render_login() -> None:
     with col:
         st.markdown("""<style> [data-testid="stSidebar"] {display: none;} </style>""", unsafe_allow_html=True)
         st.markdown("""
-        <div class="custom-card">
+        <div class="custom-card" style="margin-top: 15vh;">
           <div style="width:70px;height:70px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:20px;display:inline-flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 30px rgba(242,159,5,.4);margin-bottom:20px">🌌</div>
           <h2 style="font-size:28px;font-weight:800;margin:0 0 8px; font-family:'Space Grotesk', sans-serif;">ConPrev</h2>
           <p style="font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 30px 0; opacity: 0.7;">EFD-Reinf &middot; Sistema de Retenções</p>
@@ -524,7 +517,7 @@ def render_app():
     clientes_bd = carregar_clientes()
     lancamentos_bd = carregar_lancamentos()
     
-    # --- TAB 1: LANÇADOR (COM IA VISION RESILIENTE) ---
+    # --- TAB 1: LANÇADOR (COM IA VISION) ---
     with tab1:
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -576,20 +569,25 @@ def render_app():
             df_base = pd.DataFrame(columns=cols)
             for _ in range(5): df_base.loc[len(df_base)] = [None]*6
             
-        df_editado = st.data_editor(df_base, num_rows="dynamic", use_container_width=True)
+        # Oculta a numeração da linha (Index)
+        df_editado = st.data_editor(df_base, num_rows="dynamic", use_container_width=True, hide_index=True)
         
-        c_btn1, c_btn2 = st.columns(2)
-        with c_btn1:
+        colA, colB = st.columns(2)
+        with colA:
+            modo_salvar = st.radio("Opção de Salvamento:", ["Substituir todos os dados existentes", "Adicionar as notas aos dados existentes"], horizontal=True)
             if st.button("💾 Salvar Lançamentos na Nuvem", type="primary", use_container_width=True):
                 df_limpo = df_editado.dropna(how="all").where(pd.notnull(df_editado), None)
                 dados_salvar = df_limpo.to_dict(orient="records")
-                salvar_lancamentos(cliente_t1, comp_t1, dados_salvar)
+                
+                modo = "sobrepor" if "Substituir" in modo_salvar else "adicionar"
+                salvar_lancamentos(cliente_t1, comp_t1, dados_salvar, modo)
                 
                 st.session_state["ia_dados_importados"] = [] 
                 st.toast(f"Lançamentos salvos para {cliente_t1}!", icon='☁️')
                 st.rerun()
                 
-        with c_btn2:
+        with colB:
+            st.markdown("<br>", unsafe_allow_html=True)
             df_export = df_editado.dropna(how="all")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df_export.to_excel(writer, sheet_name="Valores", index=False)
@@ -704,7 +702,6 @@ def render_app():
                     st.error("Preencha todos os campos para cadastrar um novo cliente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Inicialização ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     if not st.session_state["authenticated"]:
         render_login()
