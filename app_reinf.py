@@ -1,9 +1,9 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.7 - Versão Definitiva Sem Cortes)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.9 - Master Completa)
 =============================================================
-Ajuste de Largura de Colunas no WORD/PDF (Sem quebra de linha em CNPJ),
-Paleta de Verde ConPrev, IA Gemini com Fallback 404, Coluna Index Oculta.
-Código 100% integral.
+Ajuste de Vencimento Inteligente (Dia 20 com antecipação de FDS),
+Paleta de Verde ConPrev Exata (C5E0B3), Larguras Exatas (Word/PDF),
+Máscara de CNPJ Implacável, IA Resiliente e UX Glassmorphism.
 """
 import streamlit as st
 import io
@@ -284,12 +284,26 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
         st.error(f"Erro de IA (Possível Limite de Quota). Aguarde 1 min.")
         return None
 
-def get_datas_padrao() -> Tuple[str, str, str, datetime]:
+def get_datas_padrao() -> Tuple[str, str]:
     hoje = datetime.now()
-    primeiro_dia = hoje.replace(day=1)
-    ultimo_dia_mes_ant = primeiro_dia - timedelta(days=1)
+    
+    # 🟢 CÁLCULO INTELIGENTE DE COMPETÊNCIA E VENCIMENTO (DIA 20) 🟢
+    primeiro_dia_atual = hoje.replace(day=1)
+    ultimo_dia_mes_ant = primeiro_dia_atual - timedelta(days=1)
     comp_folha = f"{ultimo_dia_mes_ant.strftime('%m/%Y')}"
-    return comp_folha, datetime(hoje.year, hoje.month, 20).strftime("%d/%m/%Y")
+    
+    # O vencimento padrão é o dia 20 do mês atual
+    venc_dt = datetime(hoje.year, hoje.month, 20)
+    
+    # Se o dia 20 cair no fim de semana, antecipa para sexta-feira automaticamente
+    if venc_dt.weekday() == 5: # Sábado
+        venc_dt -= timedelta(days=1)
+    elif venc_dt.weekday() == 6: # Domingo
+        venc_dt -= timedelta(days=2)
+        
+    venc_str = venc_dt.strftime("%d/%m/%Y")
+    
+    return comp_folha, venc_str
 
 def set_cell_background(cell, fill_color: str):
     """Aplica cor de fundo hexadecimal à célula do Word."""
@@ -303,18 +317,17 @@ def fix_cell_width(row, widths):
 
 # ── Gerador do Word/PDF (Agrupamento, Paleta Verde ConPrev e Larguras Exatas) ────────────────────
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
-    hex_verde_conprev = "A9D08E" 
+    # 🟢 PALETA EXATA DO RELATÓRIO: RGB(197, 224, 179) -> HEX: C5E0B3 🟢
+    hex_verde_conprev = "C5E0B3" 
 
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
     table = doc.add_table(rows=1, cols=6)
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
-    # 🟢 DESLIGA O AUTOFIT E FORÇA AS LARGURAS EM CENTÍMETROS 🟢
     table.autofit = False
     table.allow_autofit = False
     
-    # Larguras otimizadas: Órgão(1.5cm), Tomador(4.2cm), NF(1.5cm), Prestador(4.2cm), Prev(3.0cm), Comp(2.6cm)
     col_widths = [Cm(1.5), Cm(4.2), Cm(1.5), Cm(4.2), Cm(3.0), Cm(2.6)]
     for i, w in enumerate(col_widths): table.columns[i].width = w
     
@@ -511,7 +524,6 @@ def render_app():
             
         df_base = df_base.reset_index(drop=True)
         
-        # 🟢 CONTROLE DE LARGURA DAS COLUNAS WEB 🟢
         col_config = {
             "Órgão": st.column_config.TextColumn("Órgão", width=80),
             "CNPJ Tomador": st.column_config.TextColumn("CNPJ Tomador", width=180),
@@ -542,7 +554,6 @@ def render_app():
             if st.button("Salvar Tabela no Sistema", type="primary", use_container_width=True):
                 df_limpo = df_editado.dropna(how="all").where(pd.notnull(df_editado), None)
                 
-                # 🟢 MÁSCARA AUTOMÁTICA DE CNPJ ANTES DE SALVAR 🟢
                 if "CNPJ Tomador" in df_limpo.columns:
                     df_limpo['CNPJ Tomador'] = df_limpo['CNPJ Tomador'].apply(formatar_cnpj)
                 if "CNPJ Prestador" in df_limpo.columns:
@@ -576,7 +587,10 @@ def render_app():
             num_ato = f"{num_ato_int:03d}/{ano_ato}"
             resp_sel = st.selectbox("Responsável", list(RESPONSAVEIS.keys()))
             competencia = st.text_input("Competência (Gerador)", value=comp_folha)
-            vencimento = st.text_input("Vencimento", value="20/03/2026")
+            
+            # 🟢 CAMPO DE VENCIMENTO INTELIGENTE E EDITÁVEL 🟢
+            vencimento = st.text_input("Vencimento (Editável em caso de feriado local)", value=venc_str_padrao)
+            
             tipo_darf = st.radio("Tipo de Documento", ["Reinf", "Avulso", "Sem DARF"], horizontal=True)
             
         with colR:
