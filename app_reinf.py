@@ -1,9 +1,9 @@
 """
 ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.7 - Versão Definitiva Sem Cortes)
 =============================================================
-Ajuste de Largura de Colunas (pixels exatos), Paleta de Verde ConPrev no Relatório,
-Máscara Automática de CNPJ Implacável, Cálculo de PDF blindado, Coluna Index Oculta,
-Inteligência Artificial (Resiliente) e UX Glassmorphism. Código 100% integral.
+Ajuste de Largura de Colunas no WORD/PDF (Sem quebra de linha em CNPJ),
+Paleta de Verde ConPrev, IA Gemini com Fallback 404, Coluna Index Oculta.
+Código 100% integral.
 """
 import streamlit as st
 import io
@@ -19,7 +19,7 @@ from collections import defaultdict
 from openpyxl import load_workbook
 import pandas as pd
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
@@ -181,8 +181,11 @@ def injetar_css():
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
     .stApp {{ background: {bg_color} !important; }}
-    html, body, p, span, div, label, li {{ font-family: 'Inter', sans-serif !important; color: {text_color}; }}
+    
+    html, body, p, div, label, li {{ font-family: 'Inter', sans-serif !important; color: {text_color}; }}
     h1, h2, h3, h4, h5, h6 {{ font-family: 'Space Grotesk', sans-serif !important; color: {heading_color} !important; }}
+    span.material-symbols-rounded {{ font-family: 'Material Symbols Rounded' !important; }}
+    
     .stTextInput>div>div>input, .stDateInput>div>div>input, .stNumberInput>div>div>input, [data-baseweb="select"]>div {{ background: {glass_bg} !important; border: 1px solid {glass_border} !important; border-radius: 8px !important; color: {text_color} !important; }}
     .stTextInput>label, .stSelectbox>label, .stDateInput>label, .stNumberInput>label {{ color: {label_color} !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; }}
     .custom-card {{ background: {card_bg}; border: 1px solid {glass_border}; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px {shadow}; }}
@@ -230,7 +233,7 @@ def formatar_cnpj(cnpj_val: Any) -> str:
         return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
     return str(cnpj_val) 
 
-# ── Cérebro de IA (Gemini Vision Otimizado contra Limites 429) ────────────────
+# ── Cérebro de IA (Gemini Vision com Fallback de Resiliência) ────────────────
 def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, Any]]:
     if not IA_DISPONIVEL: return None
     genai.configure(api_key=api_key)
@@ -238,7 +241,7 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
     prompt = """
     Analise o documento fiscal. Extraia:
     {"Órgão": "Nome do Tomador", "CNPJ Tomador": "Apenas números", "Nº NF": "Número da Nota", "CNPJ Prestador": "Apenas números", "Total Contrib. Prev.": 0.0}
-    Devolva APENAS um JSON válido sem marcação adicional.
+    Devolva APENAS um JSON válido.
     """
     try:
         ext = os.path.splitext(uploaded_file.name)[1].lower()
@@ -247,12 +250,25 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
             tmp_path = tmp.name
             
         sample_file = genai.upload_file(path=tmp_path)
-        model = genai.GenerativeModel('gemini-1.5-flash') 
         
-        response = model.generate_content([prompt, sample_file])
+        # 🟢 CADEIA DE FALLBACK CONTRA ERRO 404 🟢
+        modelos = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.0-pro', 'gemini-pro']
+        response = None
+        for nome in modelos:
+            try:
+                model = genai.GenerativeModel(nome)
+                response = model.generate_content([prompt, sample_file])
+                break
+            except Exception:
+                continue
+                
         genai.delete_file(sample_file.name)
         os.remove(tmp_path)
         
+        if not response:
+            st.error("O Google recusou a requisição em todos os modelos. Tente novamente em breve.")
+            return None
+            
         txt_limpo = response.text.replace('```json', '').replace('```', '').strip()
         dados = json.loads(txt_limpo)
         
@@ -280,24 +296,39 @@ def set_cell_background(cell, fill_color: str):
     shd = OxmlElement('w:shd'); shd.set(qn('w:val'), 'clear'); shd.set(qn('w:color'), 'auto'); shd.set(qn('w:fill'), fill_color)
     cell._tc.get_or_add_tcPr().append(shd)
 
-# ── Gerador do Word/PDF com Agrupamento, Cálculo Perfeito e Paleta Verde ConPrev ────────────────────
+def fix_cell_width(row, widths):
+    """Força a largura exata em centímetros para cada célula da linha."""
+    for i, w in enumerate(widths):
+        row.cells[i].width = w
+
+# ── Gerador do Word/PDF (Agrupamento, Paleta Verde ConPrev e Larguras Exatas) ────────────────────
 def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
-    # 🟢 PALETA DE VERDE CONPREV (VERDE CLARO hex) 🟢
-    hex_verde_conprev = "A9D08E" # Extraído da caixa de formato antes da tabela
+    hex_verde_conprev = "A9D08E" 
 
     headers = ['Órgão', 'CNPJ Tomador', 'Nº NF', 'CNPJ Prestador', 'Total Contrib. Prev.', 'Compensação']
     table = doc.add_table(rows=1, cols=6)
-    table.style = 'Table Grid'; table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
+    # 🟢 DESLIGA O AUTOFIT E FORÇA AS LARGURAS EM CENTÍMETROS 🟢
+    table.autofit = False
+    table.allow_autofit = False
+    
+    # Larguras otimizadas: Órgão(1.5cm), Tomador(4.2cm), NF(1.5cm), Prestador(4.2cm), Prev(3.0cm), Comp(2.6cm)
+    col_widths = [Cm(1.5), Cm(4.2), Cm(1.5), Cm(4.2), Cm(3.0), Cm(2.6)]
+    for i, w in enumerate(col_widths): table.columns[i].width = w
+    
+    fix_cell_width(table.rows[0], col_widths)
+
     for i, h in enumerate(headers):
         cell = table.rows[0].cells[i]
-        # 🟢 APLICA VERDE CONPREV NO TÍTULO 🟢
         set_cell_background(cell, hex_verde_conprev)
         p = cell.paragraphs[0]; r = p.add_run(h); r.font.bold = True; r.font.size = Pt(10); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     if not dados_nfs:
-        row = table.add_row().cells
-        row[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"; row[0].merge(row[5]); row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        row = table.add_row()
+        fix_cell_width(row, col_widths)
+        row.cells[0].text = "Nenhuma retenção de INSS declarada na EFD-REINF"; row.cells[0].merge(row.cells[5]); row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         return table
 
     grupos = defaultdict(lambda: defaultdict(list))
@@ -310,56 +341,54 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
         for prestador, nfs in prestadores.items():
             sub_prest_contrib = sub_prest_comp = 0.0
             for nf in nfs:
-                row = table.add_row().cells
-                row[0].text = orgao; row[1].text = str(nf.get('CNPJ Tomador', '')); row[2].text = str(nf.get('Nº NF', ''))
-                row[3].text = prestador
+                row = table.add_row()
+                fix_cell_width(row, col_widths)
                 
-                # Garante que o valor venha limpo para o cálculo, mesmo que na tabela web tenha R$
+                row.cells[0].text = orgao; row.cells[1].text = str(nf.get('CNPJ Tomador', '')); row.cells[2].text = str(nf.get('Nº NF', ''))
+                row.cells[3].text = prestador
+                
                 v_c = safe_float(nf.get('Total Contrib. Prev.', 0))
                 v_cp = safe_float(nf.get('Compensação', 0))
                 
-                row[4].text = _brl_fmt(v_c)
-                row[5].text = _brl_fmt(v_cp)
+                row.cells[4].text = _brl_fmt(v_c)
+                row.cells[5].text = _brl_fmt(v_cp)
                 
                 sub_prest_contrib += v_c; sub_prest_comp += v_cp
-                for c in row: c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for c in row.cells: c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            # Linha de Subtotal - Prestador
-            st_row = table.add_row().cells
-            # 🟢 APLICA VERDE CONPREV NO SUBTOTAL PRESTADOR 🟢
-            set_cell_background(st_row[0], hex_verde_conprev)
+            st_row = table.add_row()
+            fix_cell_width(st_row, col_widths)
+            set_cell_background(st_row.cells[0], hex_verde_conprev)
             
-            st_row[0].text = f"Subtotal - CNPJ {prestador}"; st_row[0].merge(st_row[3]); st_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            st_row[4].text = _brl_fmt(sub_prest_contrib); st_row[5].text = _brl_fmt(sub_prest_comp)
+            st_row.cells[0].text = f"Subtotal - CNPJ {prestador}"; st_row.cells[0].merge(st_row.cells[3]); st_row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            st_row.cells[4].text = _brl_fmt(sub_prest_contrib); st_row.cells[5].text = _brl_fmt(sub_prest_comp)
             for idx in [0,4,5]:
-                for r in st_row[idx].paragraphs[0].runs: r.bold = True
-                if idx != 0: st_row[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for r in st_row.cells[idx].paragraphs[0].runs: r.bold = True
+                if idx != 0: st_row.cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             sub_org_contrib += sub_prest_contrib; sub_org_comp += sub_prest_comp
 
-        # Linha de Total Órgão
-        org_row = table.add_row().cells
-        # 🟢 APLICA VERDE CONPREV NO TOTAL ÓRGÃO 🟢
-        set_cell_background(org_row[0], hex_verde_conprev)
+        org_row = table.add_row()
+        fix_cell_width(org_row, col_widths)
+        set_cell_background(org_row.cells[0], hex_verde_conprev)
         
-        org_row[0].text = f"Subtotal do Órgão ({orgao})"; org_row[0].merge(org_row[3]); org_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        org_row[4].text = _brl_fmt(sub_org_contrib); org_row[5].text = _brl_fmt(sub_org_comp)
+        org_row.cells[0].text = f"Subtotal do Órgão ({orgao})"; org_row.cells[0].merge(org_row.cells[3]); org_row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        org_row.cells[4].text = _brl_fmt(sub_org_contrib); org_row.cells[5].text = _brl_fmt(sub_org_comp)
         for idx in [0,4,5]:
-            for r in org_row[idx].paragraphs[0].runs: r.bold = True
-            if idx != 0: org_row[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for r in org_row.cells[idx].paragraphs[0].runs: r.bold = True
+            if idx != 0: org_row.cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
         total_geral_contrib += sub_org_contrib; total_geral_comp += sub_org_comp
 
-    # Linha de TOTAL GERAL
-    t_row = table.add_row().cells
-    # 🟢 APLICA VERDE CONPREV NO TOTAL GERAL 🟢
-    set_cell_background(t_row[0], hex_verde_conprev)
+    t_row = table.add_row()
+    fix_cell_width(t_row, col_widths)
+    set_cell_background(t_row.cells[0], hex_verde_conprev)
     
-    t_row[0].text = "TOTAL GERAL"; t_row[0].merge(t_row[3]); t_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    t_row[4].text = _brl_fmt(total_geral_contrib); t_row[5].text = _brl_fmt(total_geral_comp)
+    t_row.cells[0].text = "TOTAL GERAL"; t_row.cells[0].merge(t_row.cells[3]); t_row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    t_row.cells[4].text = _brl_fmt(total_geral_contrib); t_row.cells[5].text = _brl_fmt(total_geral_comp)
     for idx in [0,4,5]:
-        for r in t_row[idx].paragraphs[0].runs: r.bold = True
-        if idx != 0: t_row[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for r in t_row.cells[idx].paragraphs[0].runs: r.bold = True
+        if idx != 0: t_row.cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
     return table
 
@@ -446,7 +475,7 @@ def render_app():
         chave_gemini = st.secrets.get("GEMINI_API_KEY", None)
         
         with st.expander("📂 Importar Notas Fiscais (Fotos ou PDFs)", expanded=False):
-            arquivos_ia = st.file_uploader("Arraste fotos/PDFs de notas aqui", type=["pdf", "png", "jpg"], accept_multiple_files=True)
+            arquivos_ia = st.file_uploader("Arraste fotos/PDFs de notas aqui", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
             if st.button("✨ Extrair dados com IA", type="primary") and arquivos_ia and chave_gemini:
                 novos = []
                 barra = st.progress(0)
@@ -482,7 +511,7 @@ def render_app():
             
         df_base = df_base.reset_index(drop=True)
         
-        # 🟢 CONTROLE DE LARGURA DAS COLUNAS (pixels exatos) 🟢
+        # 🟢 CONTROLE DE LARGURA DAS COLUNAS WEB 🟢
         col_config = {
             "Órgão": st.column_config.TextColumn("Órgão", width=80),
             "CNPJ Tomador": st.column_config.TextColumn("CNPJ Tomador", width=180),
@@ -511,10 +540,9 @@ def render_app():
                                    horizontal=False)
                                    
             if st.button("Salvar Tabela no Sistema", type="primary", use_container_width=True):
-                # dropna(how="all") garante que não salvamos linhas vazias
                 df_limpo = df_editado.dropna(how="all").where(pd.notnull(df_editado), None)
                 
-                # 🟢 MÁSCARA AUTOMÁTICA DE CNPJ ANTES DE SALVAR (Implacável) 🟢
+                # 🟢 MÁSCARA AUTOMÁTICA DE CNPJ ANTES DE SALVAR 🟢
                 if "CNPJ Tomador" in df_limpo.columns:
                     df_limpo['CNPJ Tomador'] = df_limpo['CNPJ Tomador'].apply(formatar_cnpj)
                 if "CNPJ Prestador" in df_limpo.columns:
@@ -578,7 +606,7 @@ def render_app():
                         dados_nfs = [dict(zip(headers, r)) for r in ws.iter_rows(min_row=2, values_only=True) if not all(c is None for c in r)]
 
             if st.button("Gerar PDF e Word Oficiais", type="primary", use_container_width=True, disabled=not can_run):
-                with st.spinner("Construindo documento com subtotais..."):
+                with st.spinner("Construindo documento com larguras fixas e paleta verde..."):
                     uf = clientes_bd[cliente_sel].get("UF", "")
                     contexto = {
                         '{{numero_ato}}': num_ato, '{{data_emissao}}': datetime.now().strftime('%d/%m/%Y'),
@@ -609,7 +637,7 @@ def render_app():
                         if target: target._p.addnext(tabela._tbl); target.text = ""
                         
                         buf_docx = io.BytesIO(); doc.save(buf_docx); bytes_docx = buf_docx.getvalue()
-                        st.toast('Documento compilado!', icon='🎉')
+                        st.toast('Documento compilado com sucesso!', icon='🎉')
                         
                         dl1, dl2 = st.columns(2)
                         with dl1: st.download_button("📥 Baixar WORD", data=bytes_docx, file_name=f"Folha - {cliente_sel}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
@@ -623,7 +651,7 @@ def render_app():
                                         with dl2: st.download_button("📥 Baixar PDF", data=f.read(), file_name=f"Folha - {cliente_sel}.pdf", mime="application/pdf", use_container_width=True)
                                 except Exception:
                                     with dl2: st.button("🚫 PDF Indisponível (Instale LibreOffice)", disabled=True, use_container_width=True)
-                    except Exception as e: st.error(f"❌ Erro: {e}")
+                    except Exception as e: st.error(f"❌ Erro crítico no Word: {e}")
 
     with tab3:
         st.markdown("<br><div class='custom-card'><h4>🏢 Novo Cliente</h4>", unsafe_allow_html=True)
