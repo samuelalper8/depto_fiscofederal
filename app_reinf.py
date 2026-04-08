@@ -1,8 +1,8 @@
 """
-ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.5)
+ConPrev — Gerador EFD-Reinf  ·  SaaS Premium (v10.6 - Master Completa)
 =============================================================
 Ajuste de Largura de Colunas, Máscara Automática de CNPJ Implacável,
-Cálculo de PDF blindado, Coluna Index Oculta e UX Glassmorphism.
+Cálculo de PDF blindado, Coluna Index Oculta, IA Gemini e Login Restaurado.
 """
 import streamlit as st
 import io
@@ -42,7 +42,91 @@ ARQUIVO_LANCAMENTOS = "lancamentos.json"
 
 CLIENTES_PADRAO: Dict[str, Dict[str, str]] = {
     "Legislativo - Eldorado": {"UF": "MS", "CNPJ": "70.524.376/0001-80"},
-    "Município - Uirapuru": {"UF": "GO", "CNPJ": "37.622.164/0001-60"}
+    "Município - Uirapuru": {"UF": "GO", "CNPJ": "37.622.164/0001-60"},
+    "Município - Santa Maria do Tocantins": {"UF": "TO", "CNPJ": "37.421.039/0001-92"},
+    "Município - Lajeado": {"UF": "TO", "CNPJ": "37.420.650/0001-04"},
+    "Município - Jaú do Tocantins": {"UF": "TO", "CNPJ": "37.344.413/0001-01"},
+    "Município - Alcinópolis": {"UF": "MS", "CNPJ": "37.226.651/0001-04"},
+    "Município - Teresina de Goiás": {"UF": "GO", "CNPJ": "25.105.339/0001-83"},
+    "Município - Goianorte": {"UF": "TO", "CNPJ": "25.086.612/0001-70"},
+    "Município - Palmeiras do Tocantins": {"UF": "TO", "CNPJ": "25.064.056/0001-30"},
+    "Município - Maurilândia do Tocantins": {"UF": "TO", "CNPJ": "25.064.015/0001-44"},
+    "Município - São Valério": {"UF": "TO", "CNPJ": "25.043.449/0001-68"},
+    "Legislativo - Rio Verde": {"UF": "GO", "CNPJ": "25.040.627/0001-05"},
+    "Município - Perolândia": {"UF": "GO", "CNPJ": "24.859.324/0001-48"},
+    "Município - Rio Quente": {"UF": "GO", "CNPJ": "24.852.675/0001-27"},
+    "Município - Sonora": {"UF": "MS", "CNPJ": "24.651.234/0001-67"},
+    "Município - Chapadão do Sul": {"UF": "MS", "CNPJ": "24.651.200/0001-72"},
+    "Município - Japorã": {"UF": "MS", "CNPJ": "15.905.342/0001-28"},
+    "Autarquia - SAAE de Jaraguari": {"UF": "MS", "CNPJ": "15.435.936/0001-12"},
+    "RPPS - Baliza": {"UF": "GO", "CNPJ": "11.329.148/0001-90"},
+    "RPPS - Piranhas": {"UF": "GO", "CNPJ": "07.578.154/0001-04"},
+    "RPPS - Serranópolis": {"UF": "GO", "CNPJ": "05.433.433/0001-54"},
+    "RPPS - Itaberaí": {"UF": "GO", "CNPJ": "05.370.217/0001-07"},
+    "Autarquia - Goiatuba IAG": {"UF": "GO", "CNPJ": "05.098.663/0001-04"},
+    "RPPS - Trindade": {"UF": "GO", "CNPJ": "05.015.173/0001-05"},
+    "RPPS - Barro Alto": {"UF": "GO", "CNPJ": "05.004.744/0001-06"},
+    "RPPS - Crixás": {"UF": "GO", "CNPJ": "04.739.716/0001-66"},
+    "Legislativo - Ceres": {"UF": "GO", "CNPJ": "04.340.201/0001-99"},
+    "RPPS - Sonora": {"UF": "MS", "CNPJ": "04.318.288/0001-06"},
+    "Município - Sete Quedas": {"UF": "MS", "CNPJ": "03.889.011/0001-62"},
+    "Município - Tacuru": {"UF": "MS", "CNPJ": "03.888.989/0001-00"},
+    "Município - Iguatemi": {"UF": "MS", "CNPJ": "03.568.318/0001-61"},
+    "Município - Coxim": {"UF": "MS", "CNPJ": "03.510.211/0001-62"},
+    "Município - Jaraguari": {"UF": "MS", "CNPJ": "03.501.533/0001-45"},
+    "Município - Anastácio": {"UF": "MS", "CNPJ": "03.452.307/0001-11"},
+    "Município - Brejinho de Nazaré": {"UF": "TO", "CNPJ": "02.884.153/0001-74"},
+    "Município - Pilar de Goiás": {"UF": "GO", "CNPJ": "02.647.303/0001-26"},
+    "Município - São Francisco de Goiás": {"UF": "GO", "CNPJ": "02.468.437/0001-80"},
+    "Município - Itaberaí": {"UF": "GO", "CNPJ": "02.451.938/0001-53"},
+    "Município - Peixe": {"UF": "TO", "CNPJ": "02.396.166/0001-02"},
+    "Município - Crixás": {"UF": "GO", "CNPJ": "02.382.067/0001-63"},
+    "Município - Barro Alto": {"UF": "GO", "CNPJ": "02.355.675/0001-89"},
+    "Legislativo - Itapaci": {"UF": "GO", "CNPJ": "02.353.368/0001-69"},
+    "Município - Córrego do Ouro": {"UF": "GO", "CNPJ": "02.321.115/0001-03"},
+    "Município - São Luís de Montes Belos": {"UF": "GO", "CNPJ": "02.320.406/0001-87"},
+    "Município - Goiás": {"UF": "GO", "CNPJ": "02.295.772/0001-23"},
+    "Legislativo - Perolândia": {"UF": "GO", "CNPJ": "02.254.179/0001-39"},
+    "Legislativo - Jaraguari": {"UF": "MS", "CNPJ": "02.210.819/0001-09"},
+    "Município - Pedro Afonso": {"UF": "TO", "CNPJ": "02.070.589/0001-20"},
+    "Município - Guaraí": {"UF": "TO", "CNPJ": "02.070.548/0001-33"},
+    "Município - Paranaiguara": {"UF": "GO", "CNPJ": "02.056.745/0001-06"},
+    "Município - Natividade": {"UF": "TO", "CNPJ": "01.809.474/0001-41"},
+    "Município - Montes Claros de Goiás": {"UF": "GO", "CNPJ": "01.767.722/0001-39"},
+    "Município - Brazabrantes": {"UF": "GO", "CNPJ": "01.756.741/0001-60"},
+    "Município - Goiatuba": {"UF": "GO", "CNPJ": "01.753.722/0001-80"},
+    "Legislativo - São Luís de Montes Belos": {"UF": "GO", "CNPJ": "01.725.501/0001-06"},
+    "Município - Aguiarnópolis": {"UF": "TO", "CNPJ": "01.634.074/0001-42"},
+    "Município - Novo Gama": {"UF": "GO", "CNPJ": "01.629.276/0001-04"},
+    "Município - Santa Rita do Tocantins": {"UF": "TO", "CNPJ": "01.613.127/0001-49"},
+    "Município - Bandeirantes do Tocantins": {"UF": "TO", "CNPJ": "01.612.819/0001-72"},
+    "Município - Barra do Ouro": {"UF": "TO", "CNPJ": "01.612.818/0001-28"},
+    "Autarquia - Goiatuba FESG": {"UF": "GO", "CNPJ": "01.494.665/0001-61"},
+    "Município - Amaralina": {"UF": "GO", "CNPJ": "01.492.098/0001-04"},
+    "Legislativo - Peixe": {"UF": "TO", "CNPJ": "01.447.812/0001-42"},
+    "Município - Buriti Alegre": {"UF": "GO", "CNPJ": "01.345.909/0001-44"},
+    "Município - Serranópolis": {"UF": "GO", "CNPJ": "01.343.086/0001-18"},
+    "Município - Rianápolis": {"UF": "GO", "CNPJ": "01.300.094/0001-87"},
+    "Município - Jaraguá": {"UF": "GO", "CNPJ": "01.223.916/0001-73"},
+    "Município - Trindade": {"UF": "GO", "CNPJ": "01.217.538/0001-15"},
+    "Município - Pium": {"UF": "TO", "CNPJ": "01.189.497/0001-09"},
+    "Município - Piranhas": {"UF": "GO", "CNPJ": "01.168.145/0001-69"},
+    "Município - Caiapônia": {"UF": "GO", "CNPJ": "01.164.946/0001-56"},
+    "Município - Almas": {"UF": "TO", "CNPJ": "01.138.551/0001-89"},
+    "Município - Cristalina": {"UF": "GO", "CNPJ": "01.138.122/0001-01"},
+    "Município - Itapaci": {"UF": "GO", "CNPJ": "01.134.808/0001-24"},
+    "Município - Ceres": {"UF": "GO", "CNPJ": "01.131.713/0001-57"},
+    "Município - Corumbá de Goiás": {"UF": "GO", "CNPJ": "01.118.850/0001-51"},
+    "Município - Hidrolina": {"UF": "GO", "CNPJ": "01.067.230/0001-30"},
+    "Município - Cristalândia": {"UF": "TO", "CNPJ": "01.067.156/0001-52"},
+    "Município - Baliza": {"UF": "GO", "CNPJ": "01.067.131/0001-59"},
+    "Município - Bela Vista de Goiás": {"UF": "GO", "CNPJ": "01.005.917/0001-41"},
+    "Legislativo - Costa Rica": {"UF": "MS", "CNPJ": "00.991.547/0001-04"},
+    "Legislativo - Catalão": {"UF": "GO", "CNPJ": "00.833.942/0001-50"},
+    "Município - Paraíso do Tocantins": {"UF": "TO", "CNPJ": "00.299.180/0001-54"},
+    "Município - Campinaçu": {"UF": "GO", "CNPJ": "00.145.789/0001-79"},
+    "Município - Silvanópolis": {"UF": "TO", "CNPJ": "00.114.819/0001-80"},
+    "Município - Palmeirópolis": {"UF": "TO", "CNPJ": "00.007.401/0001-73"}
 }
 
 RESPONSAVEIS: Dict[str, str] = {
@@ -138,15 +222,14 @@ def formatar_cnpj(cnpj_val: Any) -> str:
     if pd.isna(cnpj_val) or not cnpj_val: return ""
     cnpj_str = str(cnpj_val).strip()
     
-    # Se o Pandas leu o CNPJ colado como um float (ex: 11743228000198.0)
     if cnpj_str.endswith('.0'): cnpj_str = cnpj_str[:-2]
     
     digits = re.sub(r'\D', '', cnpj_str)
     if len(digits) == 14:
         return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
-    return str(cnpj_val) # Retorna original se for incompleto
+    return str(cnpj_val) 
 
-# ── Cérebro de IA (Gemini Vision Otimizado contra Limites 429) ────────────────
+# ── Cérebro de IA (Gemini Vision) ─────────────────────────────────────────────
 def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, Any]]:
     if not IA_DISPONIVEL: return None
     genai.configure(api_key=api_key)
@@ -154,7 +237,7 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
     prompt = """
     Analise o documento fiscal. Extraia:
     {"Órgão": "Nome do Tomador", "CNPJ Tomador": "Apenas números", "Nº NF": "Número da Nota", "CNPJ Prestador": "Apenas números", "Total Contrib. Prev.": 0.0}
-    Devolva APENAS um JSON válido.
+    Devolva APENAS um JSON válido sem marcação adicional.
     """
     try:
         ext = os.path.splitext(uploaded_file.name)[1].lower()
@@ -181,7 +264,7 @@ def extrair_dados_ia_gemini(uploaded_file, api_key: str) -> Optional[Dict[str, A
         
         return dados
     except Exception as e:
-        st.error(f"Erro de IA (Possível Limite de Quota): Aguarde 1 minuto e tente novamente.")
+        st.error(f"Erro de IA (Possível Limite de Quota). Aguarde 1 min.")
         return None
 
 def get_datas_padrao() -> Tuple[str, str, str, datetime]:
@@ -260,21 +343,84 @@ def criar_tabela_reinf(doc: Document, dados_nfs: List[Dict[str, Any]]) -> Any:
             
     return table
 
+def replace_everywhere(doc: Document, old: str, new: str) -> None:
+    def repl(par):
+        if old in par.text:
+            for run in par.runs:
+                if old in run.text: run.text = run.text.replace(old, new)
+            if old in par.text: par.text = par.text.replace(old, new)
+    for p in doc.paragraphs: repl(p)
+    for t in doc.tables:
+        for row in t.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs: repl(p)
+
+def converter_para_pdf(docx_bytes: bytes) -> Optional[bytes]:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docx_path = os.path.join(tmpdir, "temp.docx")
+        with open(docx_path, "wb") as f: f.write(docx_bytes)
+        try:
+            subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, docx_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            pdf_path = os.path.join(tmpdir, "temp.pdf")
+            if os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as f: return f.read()
+        except Exception: return None
+    return None
+
+# ── UI Components ─────────────────────────────────────────────────────────────
+def render_login() -> None:
+    _, col, _ = st.columns([1.4, 1, 1.4])
+    with col:
+        st.markdown("""<style> [data-testid="stSidebar"] {display: none;} </style>""", unsafe_allow_html=True)
+        st.markdown("""
+        <div class="custom-card" style="margin-top: 15vh; text-align: center;">
+          <div style="width:70px;height:70px;background:linear-gradient(135deg,#F29F05,#d78904);border-radius:20px;display:inline-flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 30px rgba(242,159,5,.4);margin-bottom:20px">🌌</div>
+          <h2 style="font-size:28px;font-weight:800;margin:0 0 8px; font-family:'Space Grotesk', sans-serif;">ConPrev</h2>
+          <p style="font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 30px 0; opacity: 0.7;">EFD-Reinf &middot; Sistema de Retenções</p>
+        </div>""", unsafe_allow_html=True)
+        
+        pwd = st.text_input("Credencial de Acesso", type="password", placeholder="••••••••", label_visibility="collapsed")
+        
+        if st.button("Acessar Plataforma", type="primary", use_container_width=True):
+            senha_oficial = st.secrets.get("APP_PASSWORD", None)
+            if not senha_oficial:
+                st.error("⚠️ Infraestrutura: A variável 'APP_PASSWORD' não foi configurada nos Secrets.")
+                return
+
+            if pwd == senha_oficial:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("⚠️ Senha incorreta. Acesso negado.")
+
+def render_header():
+    left, mid, right = st.columns([6, 2, 1])
+    with left:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:14px;padding:6px 0 16px">
+          <div style="width:42px;height:42px;flex-shrink:0;background:linear-gradient(145deg,#F29F05,#d78904);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 14px rgba(242,159,5,.4)">📄</div>
+          <div>
+            <div style="font-size:22px;font-weight:800;line-height:1.2;font-family:'Space Grotesk', sans-serif;">Folha de Rosto <span style="font-weight:400;opacity:0.7;font-size:18px;margin-left:6px">EFD-Reinf</span></div>
+            <div style="font-size:11px;opacity:0.6;margin-top:2px">Automação de Documentos &nbsp;·&nbsp; Fisco Federal</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+    with mid:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.session_state["dark_mode"] = st.toggle("🌙 Modo Escuro", value=st.session_state["dark_mode"])
+    with right:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("↩ Sair", key="logout_btn", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.rerun()
+
 def render_app():
-    comp_folha, venc_str = get_datas_padrao()
+    render_header()
+    comp_folha, venc_str_padrao = get_datas_padrao()
+    tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem/IA)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
+    
     clientes_bd = carregar_clientes()
     lancamentos_bd = carregar_lancamentos()
-
-    st.markdown("""
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-        <h2 style="margin:0;">📄 EFD-Reinf <span style="font-weight:400; opacity:0.6; font-size:18px;">Automação Fiscal</span></h2>
-    </div>
-    """, unsafe_allow_html=True)
     
-    st.session_state["dark_mode"] = st.toggle("🌙 Modo Escuro", value=st.session_state["dark_mode"])
-    
-    tab1, tab2, tab3 = st.tabs(["📝 1. Lançador de Notas (Nuvem/IA)", "⚙️ 2. Gerador Oficial (Word/PDF)", "🏢 3. Gestão de Clientes"])
-
     with tab1:
         st.markdown("<br><h4 style='margin-bottom:15px;'>🤖 Importação Inteligente (IA Vision)</h4>", unsafe_allow_html=True)
         chave_gemini = st.secrets.get("GEMINI_API_KEY", None)
@@ -314,10 +460,9 @@ def render_app():
             df_base = pd.DataFrame(columns=cols)
             for _ in range(5): df_base.loc[len(df_base)] = [None]*6
             
-        # Limpa índices de importações anteriores
         df_base = df_base.reset_index(drop=True)
         
-        # 🟢 CONTROLE DE LARGURA DAS COLUNAS 🟢
+        # 🟢 CONTROLE DE LARGURA E OCULTAÇÃO DE INDEX 🟢
         col_config = {
             "Órgão": st.column_config.TextColumn("Órgão", width="small"),
             "CNPJ Tomador": st.column_config.TextColumn("CNPJ Tomador", width="large"),
@@ -360,7 +505,7 @@ def render_app():
                 
                 msg = "A nuvem foi atualizada!" if modo == "sobrepor" else "Novas notas foram adicionadas à nuvem!"
                 st.success(f"✅ Sucesso! {msg} Os dados do cliente {cliente_t1} estão protegidos.")
-                st.rerun() # Atualiza a tabela na tela imediatamente com os CNPJs formatados
+                st.rerun()
                 
         with colB:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -392,12 +537,24 @@ def render_app():
             can_run = True
             dados_nfs = []
             if houve_retencao:
-                dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
-                if dados_nfs:
-                    st.success(f"✅ {len(dados_nfs)} notas carregadas automaticamente da nuvem para o documento final.")
+                fonte_dados = st.radio("Fonte dos Dados:", ["☁️ Nuvem (Lançamentos Salvos da IA/Manual)", "📂 Upload Antigo (.xlsx)"], horizontal=True)
+                
+                if "Nuvem" in fonte_dados:
+                    dados_nfs = lancamentos_bd.get(cliente_sel, {}).get(competencia, [])
+                    if dados_nfs:
+                        st.success(f"✅ {len(dados_nfs)} notas carregadas automaticamente da nuvem.")
+                    else:
+                        st.warning("⚠️ Nenhum lançamento encontrado na nuvem para este cliente. Volte na aba 1 para salvar.")
+                        can_run = False
                 else:
-                    st.warning("⚠️ Nenhum lançamento encontrado na nuvem para este cliente e competência. Volte na aba 1 para salvar.")
-                    can_run = False
+                    arq_excel = st.file_uploader("Upload da Planilha Excel (.xlsx)", type=["xlsx"])
+                    can_run = bool(arq_excel)
+                    if can_run:
+                        wb = load_workbook(io.BytesIO(arq_excel.getvalue()), data_only=True)
+                        aba = [n for n in wb.sheetnames if n.lower().startswith("valores")][0]
+                        ws = wb[aba]
+                        headers = [str(c.value) for c in ws[1]]
+                        dados_nfs = [dict(zip(headers, r)) for r in ws.iter_rows(min_row=2, values_only=True) if not all(c is None for c in r)]
 
             if st.button("Gerar PDF e Word Oficiais", type="primary", use_container_width=True, disabled=not can_run):
                 with st.spinner("Construindo documento com subtotais..."):
@@ -459,5 +616,7 @@ def render_app():
                     salvar_novo_cliente(novo_nome, nova_uf, novo_cnpj); st.rerun()
 
 if __name__ == "__main__":
-    if not st.session_state["authenticated"]: render_login()
-    else: render_app()
+    if not st.session_state["authenticated"]:
+        render_login()
+    else:
+        render_app()
